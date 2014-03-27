@@ -1,0 +1,34 @@
+// Simulation module for generating a clock
+// by Ofer Shacham shacham@stanford.edu
+
+/* ***************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from Ofer's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $period    = parameter(Name=>'Period',
+//;                            Val=>1000, Min=>1, Step=>1, 
+//;                            Doc=>"Period of the generated clock signal");
+//; my $half_period1 = $period / 2;
+//; my $half_period2 = $period - $half_period1;
+
+module `mname()`  
+    (
+    output logic clk
+     );
+   
+   initial begin
+      while(1) begin
+	 #`$half_period1` clk = 1'b0;
+	 #`$half_period2` clk = 1'b1;
+      end
+   end   
+ 
+endmodule // clocker

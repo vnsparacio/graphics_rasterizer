@@ -1,0 +1,460 @@
+/*
+ *  Bounding Box Sample Test Iteration
+ * 
+ *  Inputs:
+ *    BBox and MicroPolygon Information
+ * 
+ *  Outputs:
+ *    Subsample location and Micropolygon Information
+ * 
+ *  Function:
+ *    Iterate from left to right bottom to top
+ *    across the bounding box.
+ * 
+ *    While iterating set the halt signal in
+ *    order to hold the bounding box pipeline in
+ *    place.  
+ * 
+ *    
+ * Long Description:
+ *    The iterator starts in the waiting state,
+ *    when a valid micropolygon bounding box
+ *    appears at the input. It will enter the
+ *    testing state the next cycle with a 
+ *    sample equivelant to the lower left 
+ *    cooridinate of the bounding box.
+ * 
+ *    While in the testing state, the next sample
+ *    for each cycle should be one sample interval 
+ *    to the right, except when the current sample
+ *    is at the right edge.  If the current sample
+ *    is at the right edge, the next sample should
+ *    be one row up.  Additionally, if the current
+ *    sample is on the top row and the right edge,
+ *    next cycles sample should be invalid and 
+ *    equivelant to the lower left vertice and
+ *    next cycles state should be waiting.
+ * 
+ * 
+ *   Author: John Brunhaver
+ *   Created:      Thu 07/23/09
+ *   Last Updated: Tue 10/01/10
+ *
+ *   Copyright 2009 <jbrunhaver@gmail.com>   
+ *  
+ */
+
+/* ***************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 19, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>1, Min=>1, Max=>1, Step=>1, 
+//;                            Doc=>"How many pipe stages are in this block");
+//; my $mod_FSM = parameter(Name=>'ModifiedFSM',
+//;                            Val=>'NO', List=>['YES', 'NO'],
+//;                            Doc=>"Use Modified FSM to eliminate a wait state");
+//;
+//; # Convert a Fixed Point Number to a Floating
+//; sub unFix {
+//;   my $signal_name = shift @_;
+//;   my $radix = shift @_;
+//;   return " 1.0 * $signal_name / ( 128\'d1 << $radix ) ";
+//; }
+
+/* A Note on Signal Names:
+ *
+ * Most signals have a suffix of the form _RxxN 
+ * where R indicates that it is a Raster Block signal
+ * xx indicates the clock slice that it belongs to
+ * and N indicates the type of signal that it is.
+ * H indicates logic high, L indicates logic low,
+ * U indicates unsigned fixed point, and S indicates
+ * signed fixed point.
+ * 
+ */
+
+
+module `mname()`
+  (
+   //Input Signals
+   input logic signed [`$sig_fig`-1:0] 	poly_R13S[`$verts`-1:0][`$axis`-1:0], //Micropolygon to Iterate Over
+   input logic unsigned [`$sig_fig`-1:0] color_R13U[`$colors`-1:0] , //Color of Poly
+   input logic 				isQuad_R13H, //Micropolygon is quad
+   input logic signed [`$sig_fig`-1:0] 	box_R13S[1:0][1:0], //Box to iterate for subsamples
+   input logic 				validPoly_R13H, //Micropolygon is valid
+
+   //Control Signals
+   input logic [3:0] 			subSample_RnnnnU , //Subsample width 
+   output logic 			halt_RnnnnL , //Halt -> hold current micropoly
+   //Note that this block generates
+   //Global Signals
+   input logic 				clk, // Clock
+   input logic 				rst, // Reset
+
+   //Outputs
+   output logic signed [`$sig_fig`-1:0] poly_R14S[`$verts`-1:0][`$axis`-1:0], //Micropolygon to Sample Test
+   output logic unsigned [`$sig_fig`-1:0] color_R14U[`$colors`-1:0] , //Color of Poly
+   output logic signed [`$sig_fig`-1:0] sample_R14S[1:0], //Sample Location to Be Tested
+   output logic signed [`$sig_fig`-1:0] sample_R14S_top[1:0], //Top Sample Location to Be Tested
+   output logic 			isQuad_R14H, //Micropygon is quad
+   output logic 			validSamp_R14H                   //Sample and Micropolygon are Valid
+   );
+   
+   
+   // This module implement a Moore machine to iterarte sample points in bbox
+   // Recall: a Moore machine is an FSM whose output values are determined 
+   // solely by its current state.
+   // A simple way to build a Moore machine is to make states for every output
+   // and the values of the current states are the outputs themselves
+   
+   // Now we create the signals for the next states of each outputs and 
+   // then instantiate registers for storing these states
+   logic signed [`$sig_fig`-1:0] 	next_poly_R14S[`$verts`-1:0][`$axis`-1:0]; 
+   logic unsigned  [`$sig_fig`-1:0] next_color_R14U[`$colors`-1:0] ;
+   logic signed [`$sig_fig`-1:0] 	next_sample_R14S[1:0];  
+   logic signed [`$sig_fig`-1:0] 	next_sample_R14S_top[1:0];  
+   logic 				next_isQuad_R14H;                   
+   logic 				next_validSamp_R14H;                 
+   logic 				next_halt_RnnnnL;
+   
+   
+   // Instantiate registers for storing these states
+   //; my $d301 = generate( 'dff3', "d301", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>$verts,
+   //;                        ArraySize2=>$axis,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d301->instantiate()`(
+			  .in(next_poly_R14S) , 
+			  .clk(clk) , .reset(rst), .en(1'b1),
+			  .out(poly_R14S));
+   
+   //; my $d302 = generate( 'dff2', "d302", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>$colors,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d302->instantiate()` (
+			   .in(next_color_R14U) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(color_R14U));
+   
+   //; my $d303 = generate( 'dff2', "d303", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>2,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d303->instantiate()` (
+			   .in(next_sample_R14S) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(sample_R14S));		
+   
+   //; my $d303_top = generate( 'dff2', "d303_top", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>2,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d303_top->instantiate()` (
+			   .in(next_sample_R14S_top) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(sample_R14S_top));			 
+   
+   //; my $d304 = generate( 'dff', "d304", 
+   //;                        BitWidth=>3,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d304->instantiate()` (
+			   .in({next_validSamp_R14H, next_isQuad_R14H, next_halt_RnnnnL}) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out({validSamp_R14H, isQuad_R14H, halt_RnnnnL}));
+   // Instantiate registers for storing these states
+  
+
+  
+   //; if ($mod_FSM eq 'NO') {
+   
+   //////
+   //////  RTL code for original FSM Goes Here
+   //////
+   
+   // To build this FSM we want to have two more state: one is the working
+   // status of this FSM, and the other is the current bounding box where
+   // we iterate sample points
+	
+   // defin two more states, box_R14S and state_R14H
+   logic signed [`$sig_fig`-1:0] 	box_R14S[1:0][1:0];    		// the state for current bounding box
+   logic signed [`$sig_fig`-1:0] 	next_box_R14S[1:0][1:0];
+   typedef enum logic {
+		       WAIT_STATE, TEST_STATE
+		       } state_t;  
+   state_t                        state_R14H;     //State Designation (Waiting or Testing)
+   state_t                        next_state_R14H;        //Next Cycles State 
+   
+	// instantiate registers for storing these two states
+   //; my $d305 = generate( 'dff3', "d305", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>2,
+   //;                        ArraySize2=>2,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d305->instantiate()` (
+			   .in(next_box_R14S) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(box_R14S));
+			   
+			   
+   //; my $d306 = generate( 'dff', "d306", 
+   //;                        BitWidth=>1,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d306->instantiate()` (
+			   .in(next_state_R14H) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(state_R14H));
+   
+   
+	// define some helper signals
+   logic signed [`$sig_fig`-1:0] 	next_up_samp_R14S[1:0]; //If jump up, next sample
+   logic signed [`$sig_fig`-1:0] 	next_up_samp_R14S_top[1:0]; //If jump up, next sample
+   logic signed [`$sig_fig`-1:0] 	next_rt_samp_R14S[1:0]; //If jump right, next sample
+   logic 				at_right_edg_R14H;      //Current sample at right edge?
+   logic 				at_top_edg_R14H;        //Current sample at top edge?
+   logic 				at_end_box_R14H;        //Cur samp at end
+   logic [4:0]				twoSubSample_RnnnnU;
+   
+   
+   ////// PLACE YOUR CODE HERE 
+   
+   
+   //Current Sample location at Top Edge?
+   assign at_top_edg_R14H =  sample_R14S_top[1] >= box_R14S[1][1];
+   
+   //Current Sample location at Right Edge?
+   assign  at_right_edg_R14H = sample_R14S[0] == box_R14S[1][0];
+
+   //At End of Box
+   assign  at_end_box_R14H = at_top_edg_R14H & at_right_edg_R14H;
+
+   
+   //Calculate The Sample to the Right of the Current Sample
+   assign next_rt_samp_R14S[0][`$radix`-4:0] = '0;
+   assign next_rt_samp_R14S[0][`$sig_fig`-1:`$radix`-3] = sample_R14S[0][`$sig_fig`-1:`$radix`-3]
+     +  { '0 , subSample_RnnnnU } ; // X-Val is Increment
+   assign  next_rt_samp_R14S[1] = sample_R14S[1] ; // Y-val is same
+
+   //Calculate the Sample that is The Up Iteration
+   assign twoSubSample_RnnnnU = {subSample_RnnnnU, 1'b0};
+   assign next_up_samp_R14S[0] 		= box_R14S[0][0] ; //X-Val is left bbox edge
+   assign next_up_samp_R14S_top[0] 	= box_R14S[0][0] ; //X-Val is left bbox edge
+   assign  next_up_samp_R14S[1][`$radix`-4:0] = '0; 
+   assign  next_up_samp_R14S[1][`$sig_fig`-1:`$radix`-3] 	= sample_R14S[1][`$sig_fig`-1:`$radix`-3] +  { '0 , subSample_RnnnnU, 1'b0 } ; // Y-Val is Increment  
+
+   assign  next_up_samp_R14S_top[1][`$radix`-4:0] = '0;
+   assign  next_up_samp_R14S_top[1][`$sig_fig`-1:`$radix`-3] 	= /*(state_R14H == WAIT_STATE)? (box_R14S[0][1][`$sig_fig`-1:`$radix`-3] + { '0 , subSample_RnnnnU}) : */(sample_R14S_top[1][`$sig_fig`-1:`$radix`-3] + { '0 , twoSubSample_RnnnnU }) ; // Y-Val is Increment     
+   
+
+
+   //State Machine Control
+   always_comb begin
+      unique case( state_R14H )
+        ( WAIT_STATE ): begin
+	   next_sample_R14S    = box_R13S[0];  
+	   next_sample_R14S_top[0]    = box_R13S[0][0];  
+	   next_sample_R14S_top[1][`$radix`-4:0] = '0;
+	   next_sample_R14S_top[1][`$sig_fig`-1:`$radix`-3] = box_R13S[0][1][`$sig_fig`-1:`$radix`-3] + { '0 , subSample_RnnnnU};//next_up_samp_R14S_top;
+	   next_validSamp_R14H = validPoly_R13H ;
+	   next_isQuad_R14H    = isQuad_R13H;
+	   next_state_R14H     = validPoly_R13H ? TEST_STATE 
+				 : WAIT_STATE;
+	   next_poly_R14S      = poly_R13S ;
+	   next_color_R14U     = color_R13U ;
+	   next_box_R14S       = box_R13S ;
+	   next_halt_RnnnnL    = ~validPoly_R13H ; // halt for new uPoly
+	end
+	( TEST_STATE ): begin
+	   next_sample_R14S[0]    =  at_right_edg_R14H ?  next_up_samp_R14S[0] : next_rt_samp_R14S[0] ;   
+	   next_sample_R14S[1]    =  at_right_edg_R14H ?  next_up_samp_R14S[1] : next_rt_samp_R14S[1] ;   
+	   next_sample_R14S_top[0] = at_right_edg_R14H ? next_up_samp_R14S_top[0]: next_rt_samp_R14S[0];
+	   next_sample_R14S_top[1] = at_right_edg_R14H ? next_up_samp_R14S_top[1]: sample_R14S_top[1];
+	   next_validSamp_R14H =  ~at_end_box_R14H ; 
+	   next_isQuad_R14H    =   isQuad_R14H ;
+	   next_state_R14H     =   at_end_box_R14H ? WAIT_STATE 
+				   : TEST_STATE ;
+	   next_poly_R14S      =   poly_R14S ;
+	   next_color_R14U     =   color_R14U ;
+	   next_box_R14S       =   box_R14S ; 
+	   next_halt_RnnnnL    =   at_end_box_R14H  ; //unHalt when done
+	end      
+      endcase // case ( state_R14H )
+      
+   end //always_comb
+   
+   
+   //////
+   //////  RTL code for original FSM Goes Here
+   //////
+   
+   //; } else { # use Modified FSM
+   
+   //////
+   //////  RTL code for modified FSM Goes Here
+   //////
+   
+   ////// PLACE YOUR CODE HERE 
+   
+   
+   // defin two more states, box_R14S and state_R14H
+   logic signed [`$sig_fig`-1:0] 	box_R14S[1:0][1:0];
+   logic signed [`$sig_fig`-1:0] 	next_box_R14S[1:0][1:0];
+    typedef enum 			logic {
+					       LAST_SAMP, NORM_SAMP
+					       } state_t;  
+   state_t                        state_R14H;     //State Designation (Waiting or Testing)
+   state_t                        next_state_R14H;        //Next Cycles State
+	
+	
+	// instantiate registers for storing these two states
+   //; my $d305 = generate( 'dff3', "d305", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>2,
+   //;                        ArraySize2=>2,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d305->instantiate()` (
+			   .in(next_box_R14S) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(box_R14S));
+			   
+			   
+   //; my $d306 = generate( 'dff', "d306", 
+   //;                        BitWidth=>1,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d306->instantiate()` (
+			   .in(next_state_R14H) , 
+			   .clk(clk) , .reset(rst), .en(1'b1),
+			   .out(state_R14H));
+	
+	
+	// define some helper signals
+   logic signed [`$sig_fig`-1:0] 	next_up_samp_R14S[1:0]; //If jump up, next sample
+   logic signed [`$sig_fig`-1:0] 	next_rt_samp_R14S[1:0]; //If jump right, next sample
+   logic 				at_right_edg_R14H;      //Current sample at right edge?
+   logic 				at_top_edg_R14H;        //Current sample at top edge?
+   logic 				at_end_box_R14H;        //Cur samp at end
+   logic 				next_at_end_R14H;
+   
+   
+   // calculation the values of helper signals
+   assign   next_at_end_R14H = next_sample_R14S[1] == next_box_R14S[1][1] 
+     & next_sample_R14S[0] == next_box_R14S[1][0];
+   
+   //Current Sample location at Top Edge?
+   assign  at_top_edg_R14H =  sample_R14S[1] == box_R14S[1][1];
+   
+   //Current Sample location at Right Edge?
+   assign  at_right_edg_R14H = sample_R14S[0] == box_R14S[1][0];
+
+   
+   //Calculate The Sample to the Right of the Current Sample
+   assign  next_rt_samp_R14S[0][`$radix`-4:0] = '0;
+   assign  next_rt_samp_R14S[0][`$sig_fig`-1:`$radix`-3] = sample_R14S[0][`$sig_fig`-1:`$radix`-3]
+     +  { '0 , subSample_RnnnnU } ; // X-Val is Increment
+   assign  next_rt_samp_R14S[1] = sample_R14S[1] ; // Y-val is same
+
+   //Calculate the Sample that is The Up Iteration
+   assign  next_up_samp_R14S[0] = box_R14S[0][0] ; //X-Val is left bbox edge
+   assign next_up_samp_R14S[1][`$radix`-4:0] = '0; 
+   assign  next_up_samp_R14S[1][`$sig_fig`-1:`$radix`-3] = sample_R14S[1][`$sig_fig`-1:`$radix`-3]
+     +  { '0 , subSample_RnnnnU } ; // Y-Val is Increment      
+  
+   
+   //State Machine Control
+   always_comb begin 
+    
+      unique case( state_R14H )
+        ( LAST_SAMP ): begin
+	   next_sample_R14S    = box_R13S[0] ;  
+	   next_state_R14H     = validPoly_R13H & ~next_at_end_R14H ? NORM_SAMP 
+				 : LAST_SAMP;
+	   next_poly_R14S      = poly_R13S ;
+	   next_color_R14U     = color_R13U ;
+	   next_box_R14S       = box_R13S ;
+	   next_halt_RnnnnL    = ~(validPoly_R13H & ~next_at_end_R14H); // halt for new uPoly
+	   next_validSamp_R14H = validPoly_R13H ;
+	   next_isQuad_R14H    = isQuad_R13H;
+	end
+	( NORM_SAMP ): begin 
+	   // current sample point is not the last one, 
+	   // so next one is always in the same box and valid
+	   next_sample_R14S    =  at_right_edg_R14H ?  next_up_samp_R14S 
+				  : next_rt_samp_R14S ;  
+	   next_state_R14H     =  next_at_end_R14H ? LAST_SAMP : NORM_SAMP ;
+	   next_poly_R14S      =  poly_R14S ;
+	   next_color_R14U     =  color_R14U ;
+	   next_box_R14S       =  box_R14S ; 
+	   next_halt_RnnnnL    =  next_at_end_R14H; 
+	   next_validSamp_R14H =  1'b1 ; 
+	   next_isQuad_R14H    =  isQuad_R14H ;
+	end      
+      endcase // case ( state_R14H )
+      
+   end //always_comb
+
+   
+   //////
+   //////  RTL code for modified FSM Goes Here
+   //////
+   
+   
+   //; }
+
+   
+   //Error Checking Assertions
+
+   //Define a Less Than Property
+   //  
+   //  a should be less than b
+   property rb_lt( rst, a , b , c );
+      @(posedge clk) rst | ((a<=b) | !c);
+   endproperty
+
+   //Check that Proposed Sample is in BBox
+   assert property( rb_lt( rst, next_sample_R14S[0] , next_box_R14S[1][0] , next_validSamp_R14H ));
+   assert property( rb_lt( rst, next_sample_R14S[1] , next_box_R14S[1][1] , next_validSamp_R14H ));
+   assert property( rb_lt( rst, next_box_R14S[0][0] , next_sample_R14S[0] , next_validSamp_R14H ));
+   assert property( rb_lt( rst, next_box_R14S[0][1] , next_sample_R14S[1] , next_validSamp_R14H ));
+   //Check that Proposed Sample is in BBox
+
+   //Error Checking Assertions
+
+   
+endmodule
+
+
+

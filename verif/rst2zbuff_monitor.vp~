@@ -1,0 +1,219 @@
+/*
+ * rst2zbuff monitor 
+ * 
+ * This module monitors the outpus from rast
+ * to a hypothetical zbuffer.  The outputs
+ * are driven to a human readable file
+ * 
+ * 
+ *   Author: John Brunhaver, Ofer Shacham
+ *   Created:          09/21/09
+ *   Last Updated:     10/06/10
+ *
+ *   Copyright 2009 <jbrunhaver@gmail.com>  <shacham@stanford.edu> 
+ */
+
+ /****************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of Pipe Stages in bbox module");
+//; my $filename   = parameter(Name=>'Filename',
+//;                            Val=>"mon_log/rst2zbuff.log", 
+//;                            Doc=>"Log file name");
+//;
+//; # some handful subroutines
+//;
+//; # Convert a Fixed Point Number to a Floating
+//; sub unFix {
+//;   my $signal_name = shift @_;
+//;   my $radix = shift @_;
+//;   return " 1.0 * $signal_name / ( 128\'d1 << $radix ) ";
+//; }
+
+module `mname()` 
+(
+  input logic signed   [`$sig_fig`-1:0]  poly_R16S[`$verts`-1:0][`$axis`-1:0],  // 4 Sets X,Y Fixed Point Values
+  input logic unsigned [`$sig_fig`-1:0]  color_R16U[`$colors`-1:0],          // 4 Sets X,Y Fixed Point Values
+  input logic                        isQuad_R16H,                     // Is Poly Quad?
+  input logic                        validSamp_R16H,
+  input logic signed   [`$sig_fig`-1:0]  sample_R16S[1:0],
+  input logic signed   [`$sig_fig`-1:0]  sample_R16S_top[1:0],
+			 
+  input logic                        clk,                // Clock 
+  input logic                        rst,                // Reset
+			 
+  input logic signed [`$sig_fig`-1:0]   hit_R18S[`$axis`-1:0],
+  input logic signed [`$sig_fig`-1:0]   color_R18U[`$colors`-1:0],
+  input                             hit_valid_R18H ,
+  input logic signed [`$sig_fig`-1:0]   hit_R18S_top[`$axis`-1:0],
+  input logic signed [`$sig_fig`-1:0]   color_R18U_top[`$colors`-1:0],
+  input                             hit_valid_R18H_top 
+);
+
+   //Pipe Signals for Later Evaluation
+   logic signed   [`$sig_fig`-1:0]  poly_RnnS[`$verts`-1:0][`$axis`-1:0];    // 4 Sets X,Y Fixed Point Values
+   logic signed   [`$sig_fig`-1:0]  poly_Rn1S[`$verts`-1:0][`$axis`-1:0];    // 4 Sets X,Y Fixed Point Values
+   logic unsigned [`$sig_fig`-1:0]  color_RnnU[`$colors`-1:0];
+   logic 		        isQuad_RnnH;                       // Is Poly Quad?
+   logic 		        validSamp_RnnH;
+   logic signed   [`$sig_fig`-1:0]  sample_RnnS[1:0];             //
+   logic 		        validSamp_RnnH_top;
+   logic signed   [`$sig_fig`-1:0]  sample_RnnS_top[1:0];             //
+   //Pipe Signals for Later Evaluation
+
+ 
+   	//; my $d_01 = generate( 'dff3', "d_01", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_01->instantiate()` (
+					 .in(poly_R16S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_RnnS));
+
+      	//; my $d_011 = generate( 'dff3', "d_011", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'NO' );
+	`$d_011->instantiate()` (
+					 .in(poly_R16S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_Rn1S));
+					 
+	//; my $d_02 = generate( 'dff2', "d_02", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$colors,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_02->instantiate()` (
+					 .in(color_R16U) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(color_RnnU));
+	
+	//; my $d_03 = generate( 'dff2', "d_03", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_03->instantiate()` (
+					 .in(sample_R16S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(sample_RnnS));
+	
+	//; my $d_03_top = generate( 'dff2', "d_03_top", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_03_top->instantiate()` (
+					 .in(sample_R16S_top) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(sample_RnnS_top));				 
+					 						
+	//; my $d_04 = generate( 'dff', "d_04", 
+	//;                        BitWidth=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	
+	`$d_04->instantiate()` (
+					 .in({validSamp_R16H, isQuad_R16H}) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out({validSamp_RnnH, isQuad_RnnH}));	        
+					 
+		
+
+   property sig_eq_con( rst, a , b , c );
+      @(posedge clk) rst | ((a==b) | !c);
+   endproperty
+
+   //Check that signals should match
+   assert property( sig_eq_con( rst, sample_RnnS[0] , hit_R18S[0]  , 1'b1 )); //will change to something else
+   assert property( sig_eq_con( rst, sample_RnnS[1] , hit_R18S[1]  , 1'b1 )); //will change to something else
+   assert property( sig_eq_con( rst, color_RnnU[0]  , color_R18U[0]  , 1'b1 )); //Should Match
+   assert property( sig_eq_con( rst, color_RnnU[1]  , color_R18U[1]  , 1'b1 ));
+   assert property( sig_eq_con( rst, color_RnnU[2]  , color_R18U[2]  , 1'b1 ));
+
+   
+/* Setup Phase */
+   initial begin
+      int file;
+      file = $fopen("`$filename`","w");
+      $fwrite( file , " ++++++++++++++++++++++++++++++++++++++++ \n" );
+      $fwrite( file , " Simulation Start \n" );
+      $fwrite( file , " ++++++++++++++++++++++++++++++++++++++++ \n" );
+      $fwrite( file , "\n" );
+      
+      @(negedge rst) ;
+      
+      while(1) begin
+
+	 @(posedge clk);
+	 
+	 if( validSamp_RnnH ) begin
+	    // Needs to be parameterized based on vertex and `$axis` -TODO JB
+	    
+	    $fwrite( file , "@%0t:\n\t\t" , $time );
+	    $fwrite( file , "uP.v_0.x: %f\t" , `unFix('poly_RnnS[0][0]', $radix)`  );
+	    $fwrite( file , "uP.v_0.y: %f\t" , `unFix('poly_RnnS[0][1]', $radix)`  );
+	    $fwrite( file , "uP.v_1.x: %f\t" , `unFix('poly_RnnS[1][0]', $radix)`  );
+	    $fwrite( file , "uP.v_1.y: %f\t" , `unFix('poly_RnnS[1][1]', $radix)`  );
+
+		 $fwrite( file , "\n\t\t" );		 
+	    $fwrite( file , "uP.v_2.x: %f\t" , `unFix('poly_RnnS[2][0]', $radix)`  );
+	    $fwrite( file , "uP.v_2.y: %f\t" , `unFix('poly_RnnS[2][1]', $radix)`  );
+	    
+	    if( isQuad_RnnH ) begin
+	       $fwrite( file , "uP.v_3.x: %f\t" , `unFix("poly_RnnS[$verts-1][0]", $radix)`  );
+	       $fwrite( file , "uP.v_3.y: %f\t" , `unFix("poly_RnnS[$verts-1][1]", $radix)`  );
+	    end
+
+	    $fwrite( file , "\n\t\t" );
+
+	    $fwrite( file , "sample.x:%f\t",  `unFix('hit_R18S[0]', $radix)`  );
+	    $fwrite( file , "sample.y:%f\t",  `unFix('hit_R18S[1]', $radix)`  );
+	    $fwrite( file , "sample.x_top:%f\t",  `unFix('hit_R18S_top[0]', $radix)`  );
+	    $fwrite( file , "sample.y_top:%f\t",  `unFix('hit_R18S_top[1]', $radix)`  );
+	    $fwrite( file , "color.R:%f\t",   `unFix('color_RnnU[0]', $radix)` );
+ 	    $fwrite( file , "color.G:%f\t",   `unFix('color_RnnU[1]', $radix)` );
+	    $fwrite( file , "color.B:%f\t",   `unFix('color_RnnU[2]', $radix)` );
+	    $fwrite( file , "hit:%b\n" , hit_valid_R18H );
+	    $fwrite( file , "hit_top:%b\n" , hit_valid_R18H_top);
+	    	    
+	 end else begin // if ( validPoly_R10H )
+	    $fwrite( file , "@%0t: Invalid Sample \n" , $time );
+	 end    
+      end // while (1)
+   end // initial begin
+
+
+endmodule

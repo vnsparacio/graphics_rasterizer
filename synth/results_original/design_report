@@ -1,0 +1,92 @@
+Information: Updating design information... (UID-85)
+Warning: Design 'rast' contains 2 high-fanout nets. A fanout number of 1000 will be used for delay calculations involving these nets. (TIM-134)
+ 
+****************************************
+Report : design
+Design : rast
+Version: F-2011.09-SP4
+Date   : Mon Dec  2 01:10:38 2013
+****************************************
+
+Design allows ideal nets on clock nets.
+
+Library(s) Used:
+
+    tcbn45gsbwpml (File: /usr/class/ee271/project/lib/TSMC_45nm/tcbn45gsbwpml.db)
+
+Local Link Library:
+
+    {tcbn45gsbwpml.db}
+
+Flip-Flop Types:
+
+    No flip-flop types specified.
+
+Latch Types:
+
+    No latch types specified.
+
+Operating Conditions:
+
+
+    Operating Condition Name : MLCOM
+    Library : tcbn45gsbwpml
+    Process :   1.00
+    Temperature : 125.00
+    Voltage :   0.99
+    Interconnect Model : balanced_tree
+
+Wire Loading Model:
+
+    Selected automatically from the total cell area.
+
+Name           :   TSMC32K_Lowk_Conservative
+Location       :   tcbn45gsbwpml
+Resistance     :   1e-05
+Capacitance    :   1
+Area           :   0
+Slope          :   0.0021
+Fanout   Length   Points Average Cap Std Deviation
+--------------------------------------------------------------
+     1     0.00
+     2     0.00
+     3     0.00
+     4     0.00
+     5     0.00
+     6     0.00
+     7     0.00
+     8     0.01
+     9     0.01
+    10     0.01
+
+
+
+Wire Loading Model Mode: top.
+
+
+Wire Loading Model Selection Group: WireAreaLowkCon.
+
+Timing Ranges:
+
+    No timing ranges specified.
+
+Pin Input Delays:
+
+    None specified.
+
+Pin Output Delays:
+
+    None specified.
+
+Disabled Timing Arcs:
+
+    No arcs disabled.
+
+Required Licenses:
+
+    DesignWare
+
+Design Parameters:
+
+    None specified.
+1

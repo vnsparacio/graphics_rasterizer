@@ -1,0 +1,156 @@
+/*
+ * Performance monitor 
+ * 
+ * This module monitors the number of sample hits and the cycle counts
+ * 
+ * 
+ *   Author: John Brunhaver, Ofer Shacham
+ *   Created:          09/21/09
+ *   Last Updated:     10/06/10
+ *
+ *   Copyright 2009 <jbrunhaver@gmail.com>  <shacham@stanford.edu> 
+ */
+
+ /****************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of Pipe Stages in bbox module");
+//;
+//; # some handful subroutines
+//;
+//; # Convert a Fixed Point Number to a Floating
+//; sub unFix {
+//;   my $signal_name = shift @_;
+//;   my $radix = shift @_;
+//;   return " 1.0 * $signal_name / ( 128\'d1 << $radix ) ";
+//; }
+
+module `mname()` 
+(
+  input logic signed   [`$sig_fig`-1:0]  poly_R16S[`$verts`-1:0][`$axis`-1:0],  // 4 Sets X,Y Fixed Point Values
+  input logic signed   [`$sig_fig`-1:0]  poly_R10S[`$verts`-1:0][`$axis`-1:0],  
+  input logic unsigned [`$sig_fig`-1:0]  color_R16U[`$colors`-1:0],          // 4 Sets X,Y Fixed Point Values
+  input logic                        isQuad_R16H,                     // Is Poly Quad?
+  input logic                        validSamp_R16H,
+  input logic signed   [`$sig_fig`-1:0]  sample_R16S[1:0],
+			 
+  input logic                        clk,                // Clock 
+  input logic                        rst,                // Reset
+			 
+  input logic signed [`$sig_fig`-1:0]   hit_R18S[`$axis`-1:0],
+  input logic signed [`$sig_fig`-1:0]   hit_R18S_top[`$axis`-1:0],
+  input logic signed [`$sig_fig`-1:0]   color_R18U[`$colors`-1:0],
+  input                             hit_valid_R18H, 
+  input                             hit_valid_R18H_top 
+);
+
+   //Pipe Signals for Later Evaluation
+   logic signed   [`$sig_fig`-1:0]  poly_RnnS[`$verts`-1:0][`$axis`-1:0];    // 4 Sets X,Y Fixed Point Values
+   logic signed   [`$sig_fig`-1:0]  poly_Rn1S[`$verts`-1:0][`$axis`-1:0];    // 4 Sets X,Y Fixed Point Values
+   logic 		        isQuad_RnnH;                       // Is Poly Quad?
+   logic 		        validSamp_RnnH;
+   //Pipe Signals for Later Evaluation
+
+ 
+   	//; my $d_01 = generate( 'dff3', "d_01", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_01->instantiate()` (
+					 .in(poly_R10S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_RnnS));
+
+      	//; my $d_011 = generate( 'dff3', "d_011", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'NO' );
+	`$d_011->instantiate()` (
+					 .in(poly_R10S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_Rn1S));
+					 			 
+					 						
+	//; my $d_04 = generate( 'dff', "d_04", 
+	//;                        BitWidth=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	
+	`$d_04->instantiate()` (
+					 .in({validSamp_R16H, isQuad_R16H}) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out({validSamp_RnnH, isQuad_RnnH}));	        
+					 
+  
+
+   int sample_count;
+   int sample_hit_count;
+   int micropolygon_count;
+   int cycle_count;
+   
+   //Count the total Number of Valid Samples
+   initial begin
+
+      sample_count = 0;
+      sample_hit_count = 0;
+      micropolygon_count = 0;
+      cycle_count = 0 ;
+
+      @(negedge rst) ;
+      @(posedge clk);
+      @(posedge clk);
+      @(posedge clk);
+
+      while(1) begin
+	 @(posedge clk);
+
+	 sample_count = validSamp_RnnH ? (sample_count + 2) : sample_count;
+	 
+	 sample_hit_count = (validSamp_RnnH) ? 
+				((hit_valid_R18H & hit_valid_R18H_top)? ( sample_hit_count + 2 ) : 
+					(hit_valid_R18H | hit_valid_R18H_top)?( sample_hit_count + 1 ) : sample_hit_count) 
+					: sample_hit_count;
+	 
+	 micropolygon_count = ( poly_Rn1S != poly_RnnS ) ?
+			      ( micropolygon_count + 1 ) : micropolygon_count;
+
+	 cycle_count++ ;
+	 
+	 if (sample_count % 100000 == 0) begin
+		$display("time=%10t \t%10d samples processed, %10d of them hit", $time, sample_count, sample_hit_count);
+	 end
+      end
+   end
+   //Count the total Number of Valid Samples
+
+endmodule

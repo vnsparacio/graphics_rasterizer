@@ -1,0 +1,242 @@
+/*
+ * bbx_sb
+ * 
+ * The bounding box score board: 
+ *   This scoreboard checks that the output 
+ *   of the bounding box moudle is correct.
+ *   It does this by checking the function against
+ *   the golden model, which is imported using DPI.
+ * 
+ */
+ 
+  /****************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of Pipe Stages in bbox module");
+//; my $filename   = parameter(Name=>'Filename',
+//;                            Val=>"sb_log/bbx_sb.log", 
+//;                            Doc=>"Log file name");
+//;
+//; # some handful subroutines
+//;
+//; # Convert a Fixed Point Number to a Floating
+//; sub unFix {
+//;   my $signal_name = shift @_;
+//;   my $radix = shift @_;
+//;   return " 1.0 * $signal_name / ( 128\'d1 << $radix ) ";
+//; }
+
+import "DPI" pure function int rastBBox_bbox_check( 
+						    int v0_x, //uPoly
+			    			    int v0_y, //uPoly
+						    int v1_x, //uPoly
+						    int v1_y, //uPoly
+						    int v2_x, //uPoly
+						    int v2_y, //uPoly
+						    int v3_x, //uPoly
+						    int v3_y, //uPoly
+						    int q, //uPoly
+						    int valid_Poly,
+						    int ll_x, //BBOX
+						    int ll_y, //BBOX
+						    int ur_x, //BBOX
+						    int ur_y, //BBOX
+						    int ss_w_lg2, //Subsample
+						    int screen_w, //Screen
+						    int screen_h, //Screen
+						    int valid , //BBoX
+						    int r_shift, //Config
+						    int r_val     //Congig 
+						    );
+
+
+	 
+
+module `mname()` 
+(
+ 
+  input logic signed [`$sig_fig`-1:0] poly_R10S[`$verts`-1:0][`$axis`-1:0],
+  input logic 			      validPoly_R10H , // Valid Data for Operation   
+  input logic 			      isQuad_R10H , // Is Poly Quad?
+
+  input logic signed [`$sig_fig`-1:0] box_R13S[1:0][1:0] , // 2 Sets X,Y Fixed Point Values   
+  input logic signed [`$sig_fig`-1:0] poly_R13S[`$verts`-1:0][`$axis`-1:0] , // 4 Sets X,Y Fixed Point Values
+  input logic 			      validPoly_R13H , // Valid Data for Operation
+  input logic 			      isQuad_R13H , // Is Poly Quad?
+  input logic [1:0][1:0] 	      invalidate_R10H,
+  input logic 			      clk , // Clock 
+  input logic 			      rst , // Reset
+ 
+  input logic 			      halt_RnnnnL , // Halt Signal   
+  input logic signed [`$sig_fig`-1:0] screen_RnnnnS[1:0] , // Screen Dimensions
+  input logic [3:0] 		      subSample_RnnnnU                  // SubSample_Interval
+ 
+);
+
+   logic signed [`$sig_fig`-1:0]   poly_RnnS[`$verts`-1:0][`$axis`-1:0];
+   logic                       validPoly_RnnH ;                  // Valid Data for Operation   
+   logic                       isQuad_RnnH ;                     // Is Poly Quad?
+   logic [1:0][1:0] 	       invalidate_RnnH;
+   
+
+   
+   int 		       ss_w_lg2;
+   int 		       one;
+   int 		       file;
+   assign one = 1 ;
+      
+   initial begin
+      file = $fopen("`$filename`","w");
+   end
+
+   always_comb begin
+      unique case( 1'b1 )
+	( subSample_RnnnnU[0] ): ss_w_lg2 = 3;
+	( subSample_RnnnnU[1] ): ss_w_lg2 = 2;
+	( subSample_RnnnnU[2] ): ss_w_lg2 = 1;
+	( subSample_RnnnnU[3] ): ss_w_lg2 = 0;
+      endcase
+   end
+
+   
+   //Check that Bounding Box is Correct
+   always @(posedge clk) begin
+      if( validPoly_RnnH ) begin //check only when the polygon is valid
+	 if(one != rastBBox_bbox_check( 
+				     int'(poly_RnnS[0][0]), //uPoly
+				     int'(poly_RnnS[0][1]), //uPoly
+				     int'(poly_RnnS[1][0]), //uPoly
+				     int'(poly_RnnS[1][1]), //uPoly
+				     int'(poly_RnnS[2][0]), //uPoly
+				     int'(poly_RnnS[2][1]), //uPoly
+				     int'(poly_RnnS[`$verts`-1][0]), //uPoly
+				     int'(poly_RnnS[`$verts`-1][1]), //uPoly
+				     int'(isQuad_RnnH)    , //uPoly
+				     int'(validPoly_RnnH)    , //uPoly
+				     int'(box_R13S[0][0] ), //BBOX
+				     int'(box_R13S[0][1] ), //BBOX
+				     int'(box_R13S[1][0] ), //BBOX
+				     int'(box_R13S[1][1] ), //BBOX
+				     ss_w_lg2,                //Subsample
+				     int'(screen_RnnnnS[0] ), //Screen
+				     int'(screen_RnnnnS[1] ), //Screen
+				     int'(validPoly_RnnH/*validPoly_R13H*/),  //Polygon Valid
+				     `$radix`,                   //Config
+				     int'( 128'd1 << `$radix` )  //Congig 
+				     )) begin
+
+		 $fwrite( file , "@%0t: Bounding BOX ERROR!!\n" , $time );
+	         $fwrite( file , "validPoly_RnnH=%b validPoly_R13H=%b", validPoly_RnnH, validPoly_R13H );
+
+		 $fwrite( file , "\n\t\t" );
+		 $fwrite( file , "uP.v_0.x: %f\t" , `unFix('poly_RnnS[0][0]', $radix)`   );
+		 $fwrite( file , "uP.v_0.y: %f\t" , `unFix('poly_RnnS[0][1]', $radix)`   );
+		 $fwrite( file , "uP.v_1.x: %f\t" , `unFix('poly_RnnS[1][0]', $radix)`   );
+		 $fwrite( file , "uP.v_1.y: %f\t" , `unFix('poly_RnnS[1][1]', $radix)`   );
+
+		 $fwrite( file , "\n\t\t" );		 
+		 $fwrite( file , "uP.v_2.x: %f\t" , `unFix('poly_RnnS[2][0]', $radix)`   );
+		 $fwrite( file , "uP.v_2.y: %f\t" , `unFix('poly_RnnS[2][1]', $radix)`   );
+		 
+		 if( isQuad_R13H ) begin
+		    $fwrite( file , "uP.v_3.x: %f\t" , `unFix("poly_RnnS[$verts-1][0]", $radix)`   );
+		    $fwrite( file , "uP.v_3.y: %f\t" , `unFix("poly_RnnS[$verts-1][1]", $radix)`   );
+		 end
+
+		 $fwrite( file , "\n\t\t" );
+		 
+		 $fwrite( file, "box.ll.x:%f\t",  `unFix('box_R13S[0][0]', $radix)`   );
+		 $fwrite( file, "box.ll.y:%f\t",  `unFix('box_R13S[0][1]', $radix)`   );
+		 $fwrite( file, "box.ur.x:%f\t",  `unFix('box_R13S[1][0]', $radix)`   );
+		 $fwrite( file, "box.ur.y:%f\t",  `unFix('box_R13S[1][1]', $radix)`   );
+	         $fwrite( file , "\n" );
+
+	    if (~validPoly_R13H) begin
+	       $fwrite( file , "\n\t\t" );
+	       
+	       $fwrite( file, "box_R12S[0][0] > screen_RnnnnS[0]:%b\n",  invalidate_RnnH[0][0] );
+	       $fwrite( file, "box_R12S[0][1] > screen_RnnnnS[1]:%b\n",  invalidate_RnnH[0][1] );
+	       $fwrite( file, "box_R12S[1][0] < 0:%b\n",  invalidate_RnnH[1][0] );
+	       $fwrite( file, "box_R12S[1][1] < 0:%b\n",  invalidate_RnnH[1][1] );
+	       $fwrite( file , "\n" );
+	    end
+	   assert(0) else $error("@%0t: ERROR: Bounding Box Check Failed", $time);
+	end // if (one != rastBBox_bbox_check(...
+      end // if ( validPoly_R13H )
+   end // always @ (posedge clk)
+
+   
+   	//; my $d_01 = generate( 'dff3', "d_01", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_01->instantiate()` (
+					 .in(poly_R10S) , 
+				     .clk(clk) , .reset(rst), .en(!validPoly_R13H || halt_RnnnnL),
+				     .out(poly_RnnS));
+					 
+	//; my $d_02 = generate( 'dff', "d_02", 
+	//;                        BitWidth=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_02->instantiate()` (
+					 .in({validPoly_R10H, isQuad_R10H}) , 
+				     .clk(clk) , .reset(rst), .en(!validPoly_R13H ||halt_RnnnnL),
+				     .out({validPoly_RnnH, isQuad_RnnH}));
+
+      	//; my $d_03 = generate( 'dff', "d_03", 
+	//;                        BitWidth=>4,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_03->instantiate()` (
+					 .in(invalidate_R10H) , 
+				     .clk(clk) , .reset(rst), .en(!validPoly_R13H ||halt_RnnnnL),
+				     .out(invalidate_RnnH));
+   
+   always @(posedge clk) begin
+      assert( rst | ( `$verts`==3 && !isQuad_RnnH ) || `$verts`==4 )
+	else $error( "time=%10t ERROR: Saw a quad in a non-quad system", $time );
+   end
+
+   property sig_eq_con( rst, a , b , c );
+      @(posedge clk) rst | ((a==b) | !c);
+   endproperty
+
+   //Check that signals should match
+   assert property( sig_eq_con( rst, poly_RnnS[0][0] , poly_R13S[0][0]  , validPoly_RnnH )); 
+   assert property( sig_eq_con( rst, poly_RnnS[0][1] , poly_R13S[0][1]  , validPoly_RnnH )); 
+   assert property( sig_eq_con( rst, poly_RnnS[1][0] , poly_R13S[1][0]  , validPoly_RnnH )); 
+   assert property( sig_eq_con( rst, poly_RnnS[1][1] , poly_R13S[1][1]  , validPoly_RnnH )); 
+   assert property( sig_eq_con( rst, poly_RnnS[2][0] , poly_R13S[2][0]  , validPoly_RnnH )); 
+   assert property( sig_eq_con( rst, poly_RnnS[2][1] , poly_R13S[2][1]  , validPoly_RnnH )); 
+   assert property( sig_eq_con( rst, isQuad_RnnH     , isQuad_R13H      , validPoly_RnnH )); 
+ 
+endmodule 

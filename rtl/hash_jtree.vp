@@ -1,0 +1,285 @@
+/*
+ *  Hashing Function
+ * 
+ *  Inputs:
+ *    MicroPolygon and Sample Information
+ * 
+ *  Outputs:
+ *    Jittered Sample Position and Buffered Micropolygon
+ * 
+ *  Function:
+ *    Calc on offset for the sample.  This is used for
+ *    stochastic sampling reasons.  Note that this is 
+ *    a simplified hashing mechanism.  An in depth 
+ *    discussion of stochastic sampling in rendering
+ *    can be found here:
+ *    http://doi.acm.org/10.1145/7529.8927 
+ * 
+ *    
+ * Long Description:
+ *    The basic idea is to use a tree of xor
+ *    functions to generate a displacement 
+ *    from the sample center.
+ * 
+ * 
+ *   Author: John Brunhaver
+ *   Created:      Thu 10/01/10
+ *   Last Updated: Tue 10/15/10
+ *
+ *   Copyright 2009 <jbrunhaver@gmail.com>   
+ *  
+ */
+
+/* ***************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 19, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>3, Min=>0, Step=>1, 
+//;                            Doc=>"How many pipe stages are in this block");
+//; 
+//; # local variables
+//; my $hash_in_width = ($sig_fig-4)*2; 	# to catch that hash is brittle
+//; my $hash_out_width = $radix - 2;      	# to catch taht hash is brittle
+ 
+/* A Note on Signal Names:
+ *
+ * Most signals have a suffix of the form _RxxN 
+ * where R indicates that it is a Raster Block signal
+ * xx indicates the clock slice that it belongs to
+ * and N indicates the type of signal that it is.
+ * H indicates logic high, L indicates logic low,
+ * U indicates unsigned fixed point, and S indicates
+ * signed fixed point.
+ * 
+ */
+
+
+
+module `mname()`
+(
+  //Input Signals
+  input logic signed    [`$sig_fig`-1:0] poly_R14S[`$verts`-1:0][`$axis`-1:0],  //Micropolygon to Sample Test
+  input logic unsigned  [`$sig_fig`-1:0] color_R14U[`$colors`-1:0] ,         //Color of Poly
+  input logic signed    [`$sig_fig`-1:0] sample_R14S[1:0],                //Sample Location to Be Tested
+  input logic        	             validSamp_R14H,                  //Sample and Micropolygon are Valid
+  input logic         		     isQuad_R14H,                     //Micropygon is quad
+
+  //Global Signals
+  input	logic	                     clk,                // Clock
+  input logic	                     rst,                // Reset
+ 
+  //Control Signals
+  input  logic          [3:0]        subSample_RnnnnU ,   //Subsample width 
+
+  //Outputs
+  output logic signed   [`$sig_fig`-1:0] poly_R16S[`$verts`-1:0][`$axis`-1:0], // Micropolygon to Iterate Over
+  output logic unsigned [`$sig_fig`-1:0] color_R16U[`$colors`-1:0] ,        // Color of Poly
+  output logic signed   [`$sig_fig`-1:0] sample_R16S[1:0],               // Sample Location    
+  output logic                       validSamp_R16H,                 // A valid sample location
+  output logic                       isQuad_R16H                     //Micropolygon is quad
+
+ );
+   
+   
+   // output for retiming registers
+   logic signed [`$sig_fig`-1:0]     poly_R16S_retime[`$verts`-1:0][`$axis`-1:0]; // Micropolygon to Iterate Over
+   logic 			     unsigned [`$sig_fig`-1:0]   color_R16U_retime[`$colors`-1:0];      // Color of Poly
+   logic signed [`$sig_fig`-1:0]     sample_R16S_retime[1:0];   // Sample Location    
+   logic 			     validSamp_R16H_retime;                    // A valid sample location
+   logic 			     isQuad_R16H_retime;   //Micropolygon is quad  
+   // output for retiming registers
+   
+   
+   logic [`$hash_out_width`-1:0] 	     hash_mask_R14H ;
+   logic [`$hash_out_width`-1:0] 	     jitt_val_R14H[1:0] ;
+   logic [`$sig_fig`-1:0] 		     sample_jitted_R14S[1:0] ;
+
+   
+   
+   always_comb begin
+      assert( $onehot(subSample_RnnnnU) ) ;
+      unique case ( 1'b1 )
+	(subSample_RnnnnU[3]): hash_mask_R14H = 8'b11111111 ; //MSAA = 1
+	(subSample_RnnnnU[2]): hash_mask_R14H = 8'b01111111 ; //MSAA = 4
+	(subSample_RnnnnU[1]): hash_mask_R14H = 8'b00111111 ; //MSAA = 16
+	(subSample_RnnnnU[0]): hash_mask_R14H = 8'b00011111 ; //MSAA = 64
+      endcase // case ( 1'b1 )
+   end
+
+   /*always @( posedge clk ) begin
+      #100;
+     $display( "SV: %.10x %.10x \n" , 
+		{ sample_R14S[1][`$sig_fig`-1:4] , sample_R14S[0][`$sig_fig`-1:4]} ,
+		{ sample_R14S[0][`$sig_fig`-1:4] , sample_R14S[1][`$sig_fig`-1:4]} );
+
+      $display( "SV:  %.8b %.8b %.8b %.8b \n" , 
+	       xjit_hash.arr32_RnnH[31:24], xjit_hash.arr32_RnnH[23:16],
+	       xjit_hash.arr32_RnnH[15:8], xjit_hash.arr32_RnnH[7:0]);
+      $display( "SV: %.8b %.8b \n" , 
+		xjit_hash.arr16_RnnH[15:8], xjit_hash.arr16_RnnH[7:0]);  
+      $display( "SV: %.8b \n" , 
+		xjit_hash.arr16_RnnH[15:8] ^ xjit_hash.arr16_RnnH[7:0] );
+      $display( "SV: %.8b \n" , 
+		 jitt_val_R14H[0]);
+ 
+      $display( "SV:  %.8b %.8b %.8b %.8b \n" , 
+	       yjit_hash.arr32_RnnH[31:24], yjit_hash.arr32_RnnH[23:16],
+	       yjit_hash.arr32_RnnH[15:8], yjit_hash.arr32_RnnH[7:0]);
+      $display( "SV: %.8b %.8b  \n" , 
+		yjit_hash.arr16_RnnH[15:8], yjit_hash.arr16_RnnH[7:0]);  
+      $display( "SV: %.8b \n" , 
+		yjit_hash.arr16_RnnH[15:8] ^ yjit_hash.arr16_RnnH[7:0] );
+      $display( "SV: %.8b \n" , 
+		 jitt_val_R14H[1]);
+
+   end*/
+   
+   //; my $xjit_hash = generate ('tree_hash', ' xjit_hash',
+   //;                            InWidth=>$hash_in_width,
+   //;                            OutWidth=>$hash_out_width );
+   `$xjit_hash -> instantiate()` (
+	      .in_RnnH( { sample_R14S[1][`$sig_fig`-1:4] , sample_R14S[0][`$sig_fig`-1:4]}   ),
+	      .mask_RnnH( hash_mask_R14H ),
+	      .out_RnnH( jitt_val_R14H[0] )
+	      );
+   
+   //; my $yjit_hash = generate ('tree_hash', ' yjit_hash',
+   //;                            InWidth=>$hash_in_width,
+   //;                            OutWidth=>$hash_out_width );
+   `$yjit_hash -> instantiate()` (
+	      .in_RnnH( { sample_R14S[0][`$sig_fig`-1:4] , sample_R14S[1][`$sig_fig`-1:4]} ),
+	      .mask_RnnH( hash_mask_R14H ),
+	      .out_RnnH( jitt_val_R14H[1] )
+	      );
+
+   //Jitter the sample coordinates
+   assign sample_jitted_R14S[0] =  { sample_R14S[0][`$sig_fig`-1:0] }       
+                                 | { `$sig_fig - $radix`'b0,                 //23:10 = 14 bits
+				     jitt_val_R14H[0][`$hash_out_width`-1:0], //7:0 = 8 bits
+                                     `$radix - $hash_out_width`'b0 };     //1:0 = 2 bits  ==> 24 bits total  
+   
+   //Jitter the sample coordinates
+   assign sample_jitted_R14S[1] =  { sample_R14S[1][`$sig_fig`-1:0] }       
+                                 | { `$sig_fig - $radix`'b0,                 //23:10 = 14 bits
+				     jitt_val_R14H[1][`$hash_out_width`-1:0], //7:0 = 8 bits
+                                     `$radix - $hash_out_width`'b0 };     //1:0 = 2 bits  ==> 24 bits total  
+
+  
+
+   //Flop R14 to R16_retime with retiming registers	
+	//; my $d_hash_r1 = generate( 'dff3', "d_hash_r1", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'YES' );
+	`$d_hash_r1->instantiate()` (
+					 .in(poly_R14S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_R16S_retime));
+					 
+	//; my $d_hash_r2 = generate( 'dff2', "d_hash_r2", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$colors,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'YES' );
+	`$d_hash_r2->instantiate()` (
+					 .in(color_R14U) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(color_R16U_retime));
+					 
+	//; my $d_hash_r3 = generate( 'dff2', "d_hash_r3", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>2,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'YES' );
+	`$d_hash_r3->instantiate()` (
+					 .in(sample_jitted_R14S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(sample_R16S_retime));	
+					 
+	//; my $d_hash_r4 = generate( 'dff', "d_hash_r4", 
+	//;                        BitWidth=>2,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'YES' );
+	`$d_hash_r4->instantiate()` (
+				     .in({validSamp_R14H, isQuad_R14H}) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out({validSamp_R16H_retime, isQuad_R16H_retime}));		
+   //Flop R14 to R16_retime with retiming registers			
+
+
+	
+   
+	//Flop R16_retime to R16 with fixed registers
+	//; my $d_hash_f1 = generate( 'dff3', "d_hash_f1", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>1,
+	//;                        Retime=>'NO' );
+	`$d_hash_f1->instantiate()` (
+					 .in(poly_R16S_retime) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_R16S));
+					 
+	//; my $d_hash_f2 = generate( 'dff2', "d_hash_f2", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$colors,
+	//;                        PipelineDepth=>1,
+	//;                        Retime=>'NO' );
+	`$d_hash_f2->instantiate()` (
+					 .in(color_R16U_retime) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(color_R16U));
+					 
+	//; my $d_hash_f3 = generate( 'dff2', "d_hash_f3", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>2,
+	//;                        PipelineDepth=>1,
+	//;                        Retime=>'NO' );
+	`$d_hash_f3->instantiate()` (
+					 .in(sample_R16S_retime) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(sample_R16S));	
+					 
+	//; my $d_hash_f4 = generate( 'dff', "d_hash_f4", 
+	//;                        BitWidth=>2,
+	//;                        PipelineDepth=>1,
+	//;                        Retime=>'NO' );
+	`$d_hash_f4->instantiate()` (
+				     .in({validSamp_R16H_retime, isQuad_R16H_retime}) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out({validSamp_R16H, isQuad_R16H}));	
+	//Flop R16_retime to R16 with fixed registers				 
+	
+
+   
+endmodule 
+
+
+   

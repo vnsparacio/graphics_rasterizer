@@ -1,0 +1,52 @@
+/*
+ This is a three dimentional array of DFFs
+ */
+
+/* ***************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 20, 2012   jingpu    init version
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $bitwidth        = parameter(Name=>'BitWidth', 
+//;                                 Val=>64, Min=>1, Step=>1, 
+//;                                 Doc=>"Signal bit widths");
+//; my $array_size1     = parameter(Name=>'ArraySize1', 
+//;                                 Val=>64, Min=>1, Step=>1, 
+//;                                 Doc=>"The size of array's first dimention");
+//; my $array_size2     = parameter(Name=>'ArraySize2', 
+//;                                 Val=>64, Min=>1, Step=>1, 
+//;                                 Doc=>"The size of array's second dimention");
+//; my $pipe_depth      = parameter(Name=>'PipelineDepth', 
+//;                                 Val=>1, Min=>0, Step=>1, 
+//;                                 Doc=>"Pipeline depth");
+//; my $retime_Status   = parameter(Name=>'Retime' ,
+//;                                 Val=>'NO' , List=>[ 'YES' , 'NO' ] , 
+//;                                 Doc=>"Pipeline Is Retimeable" ) ;
+
+module `mname` (
+		input logic [`$bitwidth-1`:0]  in[`$array_size1-1`:0][`$array_size2-1`:0], 
+		input logic 		       clk, reset, en, 
+		output logic [`$bitwidth-1`:0] out[`$array_size1-1`:0][`$array_size2-1`:0]
+		);	
+   
+   //; my @dffs = ();
+   //; for( my $i = 0; $i < $array_size1; $i++) {
+   //; 	$dffs[$i] = generate( 'dff2', "dff2_$i", 
+   //;                             BitWidth=>$bitwidth,
+   //;                             ArraySize1=>$array_size2,
+   //;                             PipelineDepth=>$pipe_depth,
+   //;                             Retime=>$retime_Status );
+   `$dffs[$i]->instantiate()` 
+     (.in(in[`$i`]) , 
+      .clk(clk) , .reset(reset), .en(en),
+      .out(out[`$i`]));
+   //; }
+   
+endmodule 

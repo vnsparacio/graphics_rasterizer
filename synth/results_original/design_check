@@ -1,0 +1,93 @@
+ 
+****************************************
+check_design summary:
+Version:     F-2011.09-SP4
+Date:        Mon Dec  2 01:10:38 2013
+****************************************
+
+                   Name                                            Total
+--------------------------------------------------------------------------------
+Inputs/Outputs                                                     62
+    Unconnected ports (LINT-28)                                    49
+    Shorted outputs (LINT-31)                                       9
+    Constant outputs (LINT-52)                                      4
+
+Cells                                                              12
+    Cells do not drive (LINT-1)                                    12
+--------------------------------------------------------------------------------
+
+Warning: In design 'rast', cell 'U6850' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U6874' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U6980' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U7030' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U7567' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U7658' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U7665' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U7671' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U8519' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U8520' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U8521' does not drive any nets. (LINT-1)
+Warning: In design 'rast', cell 'U8536' does not drive any nets. (LINT-1)
+Warning: In design 'rast', port 'poly_R10S[2][2][23]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][22]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][21]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][20]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][19]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][18]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][17]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][16]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][15]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][14]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][13]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][12]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][11]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][10]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][9]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][8]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][7]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][6]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][5]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][4]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][3]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][2]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][1]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[2][2][0]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][23]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][22]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][21]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][20]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][19]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][18]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][17]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][16]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][15]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][14]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][13]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][12]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][11]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][10]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][9]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][8]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][7]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][6]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][5]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][4]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][3]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][2]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][1]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'poly_R10S[1][2][0]' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', port 'isQuad_R10H' is not connected to any nets. (LINT-28)
+Warning: In design 'rast', output port 'hit_R18S[1][18]' is connected directly to output port 'hit_R18S[0][4]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][17]' is connected directly to output port 'hit_R18S[0][3]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][16]' is connected directly to output port 'hit_R18S[0][2]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][4]' is connected directly to output port 'hit_R18S[0][18]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][3]' is connected directly to output port 'hit_R18S[0][17]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][2]' is connected directly to output port 'hit_R18S[0][16]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][1]' is connected directly to output port 'hit_R18S[0][0]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][1]' is connected directly to output port 'hit_R18S[0][1]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][1]' is connected directly to output port 'hit_R18S[1][0]'. (LINT-31)
+Warning: In design 'rast', output port 'hit_R18S[1][1]' is connected directly to 'logic 0'. (LINT-52)
+Warning: In design 'rast', output port 'hit_R18S[1][0]' is connected directly to 'logic 0'. (LINT-52)
+Warning: In design 'rast', output port 'hit_R18S[0][1]' is connected directly to 'logic 0'. (LINT-52)
+Warning: In design 'rast', output port 'hit_R18S[0][0]' is connected directly to 'logic 0'. (LINT-52)
+1

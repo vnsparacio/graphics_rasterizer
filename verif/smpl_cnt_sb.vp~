@@ -1,0 +1,322 @@
+/*
+ * smpl_cnt_sb
+ * 
+ *  This is a sample count scoreboard.  It checks
+ *  to make sure that each polygon generates
+ *  the correct number of fragments.
+ * 
+ *  Combined with the correct sample test scoreboard 
+ *  both scoreboards should detect if a micropolygon
+ *  generates any incorrect fragments
+ * 
+ * 
+ */
+ 
+  /****************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of Pipe Stages in bbox module");
+//; my $filename   = parameter(Name=>'Filename',
+//;                            Val=>"sb_log/smpl_cnt_sb.log", 
+//;                            Doc=>"Log file name");
+//;
+//; # some handful subroutines
+//;
+//; # Convert a Fixed Point Number to a Floating
+//; sub unFix {
+//;   my $signal_name = shift @_;
+//;   my $radix = shift @_;
+//;   return " 1.0 * $signal_name / ( 128\'d1 << $radix ) ";
+//; }
+
+import "DPI" pure function int rastBBox_check( int   v0_x,   //uPoly
+					  int   v0_y,        //uPoly
+					  int   v1_x,        //uPoly
+					  int   v1_y,        //uPoly
+					  int   v2_x,        //uPoly
+					  int   v2_y,        //uPoly
+					  int   v3_x,        //uPoly
+					  int   v3_y,        //uPoly
+					  int   q,           //uPoly
+					  int   hits,        //Number of Samples in uPoly
+					  int   ss_w_lg2,    //Subsample
+					  int   screen_w,    //Screen
+					  int   screen_h,    //Screen
+					  int   r_shift,     //Config
+					  int   r_val        //Congig 
+					  );
+   
+
+
+import "DPI" pure function int  rastBBox_jhash_jit_fix_check( 
+							      int s_x,
+							      int s_y,
+							      int ss_w_lg2,
+							      int jitter_x,
+							      int jitter_y,
+							      int s_j_x,
+							      int s_j_y);
+
+module `mname()` 
+(
+			    
+  input logic signed   [`$sig_fig`-1:0]  poly_R16S[`$verts`-1:0][`$axis`-1:0],  // 4 Sets X,Y Fixed Point Values
+  input logic unsigned [`$sig_fig`-1:0]  color_R16U[`$colors`-1:0],          // 4 Sets X,Y Fixed Point Values
+  input logic                        isQuad_R16H,                     // Is Poly Quad?
+  input logic                        validSamp_R16H,
+  input logic signed   [`$sig_fig`-1:0]  sample_R16S[1:0],
+			 
+  input logic                        clk,                // Clock 
+  input logic                        rst,                // Reset
+			 
+  input logic signed [`$sig_fig`-1:0]   hit_R18S[`$axis`-1:0],
+  input logic signed [`$sig_fig`-1:0]   color_R18U[`$colors`-1:0],
+  input logic                       hit_valid_R18H,
+  input logic                       hit_valid_R18H_top,
+		   
+  input logic        [`$sig_fig`-1:0]  screen_RnnnnS[1:0],      // Screen Size
+  input logic  	     [3:0]         subSample_RnnnnU,    // Flag for subsample
+
+
+  input logic signed [`$sig_fig`-1:0]   s_x_RnnS ,
+  input logic signed [`$sig_fig`-1:0]   s_y_RnnS ,
+  input logic signed [7:0]    jitter_x_RnnS ,
+  input logic signed [7:0]    jitter_y_RnnS,
+  input logic signed [`$sig_fig`-1:0]   s_j_x_RnnS ,
+  input logic signed [`$sig_fig`-1:0]   s_j_y_RnnS 
+		   
+ );
+	
+
+   //Pipe Signals for Later Evaluation
+   logic signed   [`$sig_fig`-1:0]  poly_RnnS[`$verts`-1:0][`$axis`-1:0];    // 4 Sets X,Y Fixed Point Values
+   logic signed   [`$sig_fig`-1:0]  poly_Rn1S[`$verts`-1:0][`$axis`-1:0];    // 4 Sets X,Y Fixed Point Values
+   logic unsigned [`$sig_fig`-1:0]  color_RnnU[`$colors`-1:0];
+   logic 		        isQuad_RnnH;                       // Is Poly Quad?
+   logic 		        isQuad_Rn1H;                       // Is Poly Quad?
+   logic 		        validSamp_RnnH;
+   logic signed   [`$sig_fig`-1:0]  sample_RnnS[1:0];             //
+   //Pipe Signals for Later Evaluation
+
+   //Helper Signals
+   int 		       file;
+   int 		       one;
+   int 		       ss_w_lg2;
+   assign one = 1 ;
+   //Helper Signals
+    
+   //Bench Logic
+   int   hit_count;
+   int   hit_count_next;
+   logic incr;
+   logic keep;
+   logic reset_to_zero;
+   logic reset_to_one;
+   //Bench Logic
+
+     
+   initial begin
+      file = $fopen("`$filename`","w");
+   end
+
+   always_comb begin
+      unique case( 1'b1 )
+	( subSample_RnnnnU[0] ): ss_w_lg2 = 3;
+	( subSample_RnnnnU[1] ): ss_w_lg2 = 2;
+	( subSample_RnnnnU[2] ): ss_w_lg2 = 1;
+	( subSample_RnnnnU[3] ): ss_w_lg2 = 0;
+      endcase
+   end
+
+
+   always @( posedge clk ) begin
+      #10;
+      if( ~rst ) begin
+	 if( one != rastBBox_jhash_jit_fix_check( 
+					   s_x_RnnS ,
+					   s_y_RnnS ,
+					   ss_w_lg2 ,
+					   int'( { 24'h000000 , jitter_x_RnnS} ) ,
+					   int'( { 24'h000000 , jitter_y_RnnS} ) ,
+					   s_j_x_RnnS,
+					   s_j_y_RnnS	  ) ) begin
+	    assert( 0 ) else $error( "time=%10t ERROR: Hash Check in Rast Failed", $time) ;
+	 end
+      end
+   end
+
+
+   
+
+   
+
+   //Check that the Number of Hits is Correct
+   always @( posedge clk ) begin
+      #10;
+      if( reset_to_zero && validSamp_RnnH ) begin
+	 if( one != rastBBox_check( 
+			int'(poly_RnnS[0][0]),   //uPoly
+			int'(poly_RnnS[0][1]),   //uPoly
+			int'(poly_RnnS[1][0]),   //uPoly
+			int'(poly_RnnS[1][1]),   //uPoly
+			int'(poly_RnnS[2][0]),   //uPoly
+			int'(poly_RnnS[2][1]),   //uPoly
+			int'(poly_RnnS[`$verts`-1][0]),   //uPoly
+			int'(poly_RnnS[`$verts`-1][1]),   //uPoly 
+			int'(isQuad_RnnH)    ,   //uPoly	
+			hit_count,               //Number of Samples in uPoly
+			ss_w_lg2,                //Subsample
+			int'(screen_RnnnnS[0] ), //Screen
+			int'(screen_RnnnnS[1] ), //Screen
+			`$radix`,                   //Config
+			int'( 128'd1 << `$radix` )  //Congig 
+			)) begin
+
+
+	    $fwrite( file , "@%0t: Sample Test ERROR!!!!\n\t\t" , $time );
+	    $fwrite( file , "uP.v_0.x: %f\t" , `unFix('poly_Rn1S[0][0]', $radix)`   );
+	    $fwrite( file , "uP.v_0.y: %f\t" , `unFix('poly_Rn1S[0][1]', $radix)`   );
+	    $fwrite( file , "uP.v_1.x: %f\t" , `unFix('poly_Rn1S[1][0]', $radix)`   );
+	    $fwrite( file , "uP.v_1.y: %f\t" , `unFix('poly_Rn1S[1][1]', $radix)`   );
+
+		 $fwrite( file , "\n\t\t" );		 
+	    $fwrite( file , "uP.v_2.x: %f\t" , `unFix('poly_Rn1S[2][0]', $radix)`   );
+	    $fwrite( file , "uP.v_2.y: %f\t" , `unFix('poly_Rn1S[2][1]', $radix)`   );
+	    
+	    if( isQuad_Rn1H ) begin
+	       $fwrite( file , "uP.v_3.x: %f\t" , `unFix("poly_Rn1S[$verts-1][0]", $radix)`   );
+	       $fwrite( file , "uP.v_3.y: %f\t" , `unFix("poly_Rn1S[$verts-1][1]", $radix)`   );
+	    end
+
+	    $fwrite( file , "\n" );
+	 
+	    assert( 0 ) else $error( "time=%10t ERROR: RAST Check Failed", $time) ;
+	 end
+      end 
+   end
+
+	 
+
+   //Sample hit Counter for 
+
+   //hit_count_next holds the number of hits in uPoly 106 so far
+      	//; my $dc = generate( 'dff', "dc", 
+	//;                        BitWidth=>32,
+	//;                        PipelineDepth=>1,
+	//;                        Retime=>'NO' );
+	`$dc->instantiate()` (
+					 .in(hit_count_next) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(hit_count));
+ 
+   always_comb begin
+   
+      reset_to_zero = (poly_Rn1S != poly_RnnS) ; //New Poly
+      reset_to_one = reset_to_zero && hit_valid_R18H ; //New Poly with hit
+      incr = hit_valid_R18H | hit_valid_R18H_top ;
+      keep = ~(hit_valid_R18H | hit_valid_R18H_top);
+    
+      priority case( 1'b1 )
+	(reset_to_one): hit_count_next = 1;
+	(reset_to_zero): hit_count_next = 0;
+	(incr): hit_count_next = (hit_valid_R18H & hit_valid_R18H_top)? hit_count + 2 : hit_count + 1 ;
+	(keep): hit_count_next = hit_count ;
+	default: hit_count_next = 0;
+      endcase // case ( 1'b1 )
+   end
+   //Sample Hit Counter
+
+   //Pipe Micropolygon Along
+	//; my $d_01 = generate( 'dff3', "d_01", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_01->instantiate()` (
+					 .in(poly_R16S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_RnnS));
+					 
+					 
+	//; my $d_011 = generate( 'dff3', "d_011", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$verts,
+	//;                        ArraySize2=>$axis,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'NO' );
+	`$d_011->instantiate()` (
+					 .in(poly_R16S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(poly_Rn1S));
+					 
+					 
+	//; my $d_02 = generate( 'dff2', "d_02", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>$colors,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_02->instantiate()` (
+					 .in(color_R16U) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(color_RnnU));
+	
+	//; my $d_03 = generate( 'dff2', "d_03", 
+	//;                        BitWidth=>$sig_fig,
+	//;                        ArraySize1=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	`$d_03->instantiate()` (
+					 .in(sample_R16S) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(sample_RnnS));				 
+					 						
+	//; my $d_04 = generate( 'dff', "d_04", 
+	//;                        BitWidth=>2,
+	//;                        PipelineDepth=>$pipe_depth,
+	//;                        Retime=>'NO' );
+	
+	`$d_04->instantiate()` (
+					 .in({validSamp_R16H, isQuad_R16H}) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out({validSamp_RnnH, isQuad_RnnH}));	
+
+
+	//; my $d_041 = generate( 'dff', "d_041", 
+	//;                        BitWidth=>1,
+	//;                        PipelineDepth=>$pipe_depth-1,
+	//;                        Retime=>'NO' );
+	
+	`$d_041->instantiate()` (
+					 .in(isQuad_R16H) , 
+				     .clk(clk) , .reset(rst), .en(1'b1),
+				     .out(isQuad_Rn1H));					 
+					
+      
+endmodule

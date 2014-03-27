@@ -1,0 +1,28 @@
+ 
+****************************************
+Report : area
+Design : rast
+Version: F-2011.09-SP4
+Date   : Mon Dec  2 01:10:38 2013
+****************************************
+
+Library(s) Used:
+
+    tcbn45gsbwpml (File: /usr/class/ee271/project/lib/TSMC_45nm/tcbn45gsbwpml.db)
+
+Number of ports:                          490
+Number of nets:                         19388
+Number of cells:                        17565
+Number of combinational cells:          14206
+Number of sequential cells:              3359
+Number of macros:                           0
+Number of buf/inv:                       4951
+Number of references:                     199
+
+Combinational area:       23378.645037
+Noncombinational area:    15867.885748
+Net Interconnect area:      undefined  (Wire load has zero net area)
+
+Total cell area:          39246.530785
+Total area:                 undefined
+1

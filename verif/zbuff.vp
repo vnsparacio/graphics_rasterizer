@@ -1,0 +1,287 @@
+/*
+ *  zbuff.v
+ * 
+ *  Model of a z-buffer
+ * 
+ *  Inputs:
+ *   Sample Location
+ *   Sample Hit
+ *   Sample Depth
+ *   Sample Color
+ * 
+ *  Outputs:
+ *   None -> Writes an image file at simulation end
+ * 
+ *  Function:
+ *   Implement Zbuffer algorithm
+ *   Write image at simualtion end
+ * 
+ * 
+ *   Author: John Brunhaver
+ *   Created:      Mon 10/18/10
+ *   Last Updated: Mon 10/18/10
+ * 
+ *   Copyright 2010 <jbrunhaver@gmail.com>   
+ * 
+ */
+ 
+  /****************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $filename   = parameter(Name=>'Filename',
+//;                            Val=>"f_image.ppm", 
+//;                            Doc=>"Output image file name");
+// TODO: comput log2 using perl function
+//; my $fb_l2     = parameter(Name=>'FB_log2',
+//;                            Val=>11, Min=>1, Step=>1, 
+//;                            Doc=>"Log_2 of Greatest Pixel Width");
+//; my $fb     = parameter(Name=>'FB',
+//;                            Val=>2048, Min=>1, Step=>1, 
+//;                            Doc=>"Greatest Pixel Width or Pixel Height for simulation");
+//; my $ss_l2     = parameter(Name=>'SS_log2',
+//;                            Val=>2, Min=>1, Step=>1, 
+//;                            Doc=>"Number of bits needed for maximum subsampling index");
+//; my $ss     = parameter(Name=>'SS',
+//;                            Val=>4, Min=>1, Step=>1, 
+//;                            Doc=>"Greatest number of x ind needed for subsampling 4-> 16x MSAA");
+//; my $colorP     = parameter(Name=>'ColorP',
+//;                            Val=>12, Min=>1, Step=>1, 
+//;                            Doc=>"Bits of Precision in Color");
+
+
+/* A Note on Signal Names:
+ *
+ * Most signals have a suffix of the form _RxxxxN 
+ * where R indicates that it is a Raster Block signal
+ * xxxx indicates the clock slice that it belongs to
+ * and N indicates the type of signal that it is.
+ * H indicates logic high, L indicates logic low,
+ * U indicates unsigned fixed point, and S indicates
+ * signed fixed point.
+ * 
+ */
+ 
+
+import "DPI" pure function 
+int zbuff_init( int w,    //Screen Width
+		int h,    //Screen Width
+		int ss_w  //Subsample Width
+		); 
+
+import "DPI" pure function    
+int zbuff_rop(  int x ,   //Hit Loc. X
+		int y ,   //Hit Loc. Y
+		int ss_x ,  //`$ss` Hit loc X
+		int ss_y ,  //`$ss` Hit Loc Y
+		int d , //actually a uint
+		int R , //actually a ushort
+		int G , //actually a ushort
+		int B   //actually a ushort
+		) ;
+
+import "DPI" pure function 
+int write_ppm( );
+
+
+
+
+
+module `mname()` 
+   ( 
+     input logic                     clk,
+     input logic                     rst,
+     
+     input logic signed [`$sig_fig`-1:0] screen_RnnnnS[1:0],              // Input: Screen Dimensions
+     input logic        [3:0]        subSample_RnnnnU,                // Input: SubSample_Interval
+     input int                   ss_w_lg2_RnnnnS,
+     
+     input logic signed   [`$sig_fig`-1:0] hit_R18S[`$axis`-1:0],
+     input logic signed   [`$sig_fig`-1:0] hit_R18S_top[`$axis`-1:0],
+     input logic unsigned [`$sig_fig`-1:0] color_R18U[`$colors`-1:0],
+     input logic unsigned [`$sig_fig`-1:0] color_R18U_top[`$colors`-1:0],
+     input logic                       hit_valid_R18H,
+     input logic                       hit_valid_R18H_top
+     
+     );
+   
+    //                               
+
+   logic unsigned [`$fb_l2`-1:0]  x_ind;
+   logic unsigned [`$fb_l2`-1:0]  y_ind;
+   logic unsigned [`$ss_l2`-1:0]  x_ss_ind;
+   logic unsigned [`$ss_l2`-1:0]  y_ss_ind;
+   logic unsigned [`$sig_fig`-1:0] depth;
+   logic unsigned [`$fb_l2`-1:0]  x_ind_top;
+   logic unsigned [`$fb_l2`-1:0]  y_ind_top;
+   logic unsigned [`$ss_l2`-1:0]  x_ss_ind_top;
+   logic unsigned [`$ss_l2`-1:0]  y_ss_ind_top;
+   logic unsigned [`$sig_fig`-1:0] depth_top;
+   logic unsigned [`$sig_fig`-1:0] color[`$colors`-1:0];
+   logic unsigned [`$sig_fig`-1:0] color_top[`$colors`-1:0];
+
+   int unsigned     x_max ;
+   int unsigned     y_max ;
+   int unsigned     ss_max ;
+   int unsigned     ss_rate ;
+   
+   
+   logic [`$sig_fig`-1:0]           zero ;                     //fudge signal to hold zero as a reset value
+   logic [127:0] 		big_zero;                 //fudge signal to hold zero as a reset value
+
+   assign big_zero = 128'd0;
+   assign zero = big_zero[`$sig_fig`-1:0];
+
+   assign  depth = unsigned'(hit_R18S[2]);
+   assign  x_ind = hit_R18S[0][(`$radix`+`$fb_l2`-1):`$radix`];
+   assign  y_ind = hit_R18S[1][(`$radix`+`$fb_l2`-1):`$radix`];
+
+   assign  depth_top = unsigned'(hit_R18S_top[2]);
+   assign  x_ind_top = hit_R18S_top[0][(`$radix`+`$fb_l2`-1):`$radix`];
+   assign  y_ind_top = hit_R18S_top[1][(`$radix`+`$fb_l2`-1):`$radix`];
+
+   //Brittle Only works for `$colors`=3
+   assign color[0] = color_R18U[0];
+   assign color[1] = color_R18U[1];
+   assign color[2] = color_R18U[2];
+   assign color_top[0] = color_R18U_top[0];
+   assign color_top[1] = color_R18U_top[1];
+   assign color_top[2] = color_R18U_top[2];
+
+   assign x_max = screen_RnnnnS[0][`$sig_fig`-1:`$radix`];
+   assign y_max = screen_RnnnnS[1][`$sig_fig`-1:`$radix`];
+
+   
+   always_comb begin
+
+      unique case ( subSample_RnnnnU )
+	(4'b1000 ): x_ss_ind[`$ss_l2`-1:0] =   zero[`$ss_l2`-1:0] ;
+	(4'b0100 ): x_ss_ind[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S[0][`$radix`-1] }  ;
+	(4'b0010 ): x_ss_ind[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S[0][`$radix`-1:`$radix`-2] }  ;
+	(4'b0001 ): x_ss_ind[`$ss_l2`-1:0] = {                   hit_R18S[0][`$radix`-1:`$radix`-3] }  ;
+      endcase // case ( subSample_RnnnnU )
+      
+      unique case ( subSample_RnnnnU )
+	(4'b1000 ): y_ss_ind[`$ss_l2`-1:0] =   zero[`$ss_l2`-1:0] ;
+	(4'b0100 ): y_ss_ind[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S[1][`$radix`-1] }  ;
+	(4'b0010 ): y_ss_ind[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S[1][`$radix`-1:`$radix`-2] }  ;
+	(4'b0001 ): y_ss_ind[`$ss_l2`-1:0] = {                   hit_R18S[1][`$radix`-1:`$radix`-3] }  ;
+      endcase // case ( subSample_RnnnnU )
+
+      unique case ( subSample_RnnnnU )
+	(4'b1000 ): x_ss_ind_top[`$ss_l2`-1:0] =   zero[`$ss_l2`-1:0] ;
+	(4'b0100 ): x_ss_ind_top[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S_top[0][`$radix`-1] }  ;
+	(4'b0010 ): x_ss_ind_top[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S_top[0][`$radix`-1:`$radix`-2] }  ;
+	(4'b0001 ): x_ss_ind_top[`$ss_l2`-1:0] = {                   hit_R18S_top[0][`$radix`-1:`$radix`-3] }  ;
+      endcase // case ( subSample_RnnnnU )
+      
+      unique case ( subSample_RnnnnU )
+	(4'b1000 ): y_ss_ind_top[`$ss_l2`-1:0] =   zero[`$ss_l2`-1:0] ;
+	(4'b0100 ): y_ss_ind_top[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S_top[1][`$radix`-1] }  ;
+	(4'b0010 ): y_ss_ind_top[`$ss_l2`-1:0] = { zero[`$ss_l2`-1:1] , hit_R18S_top[1][`$radix`-1:`$radix`-2] }  ;
+	(4'b0001 ): y_ss_ind_top[`$ss_l2`-1:0] = {                   hit_R18S_top[1][`$radix`-1:`$radix`-3] }  ;
+      endcase // case ( subSample_RnnnnU )
+
+      unique case ( subSample_RnnnnU )
+	(4'b1000 ): ss_max = 1  ;
+	(4'b0100 ): ss_max = 2  ;
+	(4'b0010 ): ss_max = 4  ;
+	(4'b0001 ): ss_max = 8  ;
+      endcase // case ( subSample_RnnnnU )
+ 
+      unique case ( subSample_RnnnnU )
+	(4'b1000 ): ss_rate = 1  ;
+	(4'b0100 ): ss_rate = 4  ;
+	(4'b0010 ): ss_rate = 16 ;
+	(4'b0001 ): ss_rate = 64 ;
+      endcase // case ( subSample_RnnnnU )
+ 
+   end
+   
+
+    
+    
+   always @(posedge clk) begin
+      #25;
+	 if( hit_valid_R18H && ~rst ) begin
+	    zbuff_rop(  x_ind ,   //Hit Loc. X
+			y_ind ,   //Hit Loc. Y
+			x_ss_ind ,  //`$ss` Hit loc X
+			y_ss_ind ,  //`$ss` Hit Loc Y
+			depth , //actually a uint
+			color[0] , //actually a ushort
+			color[1] , //actually a ushort
+			color[2]  //actually a ushort
+		) ;
+	 end
+	if( hit_valid_R18H_top && ~rst ) begin
+	    zbuff_rop(  x_ind_top ,   //Hit Loc. X
+			y_ind_top ,   //Hit Loc. Y
+			x_ss_ind_top ,  //`$ss` Hit loc X
+			y_ss_ind_top ,  //`$ss` Hit Loc Y
+			depth_top , //actually a uint
+			color_top[0] , //actually a ushort
+			color_top[1] , //actually a ushort
+			color_top[2]  //actually a ushort
+		) ;
+	 end				   
+   end
+     
+
+   task init_buffers;
+      begin
+	 $display("time=%10t ************** Initializing FB and ZB *****************", $time);
+	 #10;
+	 
+	 zbuff_init( x_max,    //Screen Width
+		     y_max,    //Screen Width
+		     ss_max  //Subsample Width
+		     ); 
+	 
+	 $display("time=%10t ************** Finished Init FB and ZB *****************", $time);
+      end
+   endtask
+
+   
+   task write_image;
+      begin
+	 #10;
+
+	 $display("time=%10t ************** Writing Final Image to File *****************", $time);
+	 #10;
+
+	 write_ppm( );
+	 #10;
+	 
+	 $display("time=%10t ************** Finished Final Image to File *****************", $time);
+	 #10;
+	 
+      end
+   endtask //write_image
+
+
+   
+endmodule

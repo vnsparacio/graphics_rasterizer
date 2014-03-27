@@ -1,0 +1,118 @@
+/*
+ * gm2rst_monitor task
+ * 
+ * 
+ *    This task consumes the signals also consumed 
+ *    by the RAST module and prints them to a local
+ *    log file.
+ * 
+ * 
+ */
+ 
+  /****************************************************************************
+ * Change bar:
+ * -----------
+ * Date           Author    Description
+ * Sep 22, 2012   jingpu    ported from John's original code to Genesis
+ *                          
+ * ***************************************************************************/
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $filename   = parameter(Name=>'Filename',
+//;                            Val=>"mon_log/gm2rst.log", 
+//;                            Doc=>"Log file name");
+//;
+//; # some handful subroutines
+//;
+//; # Convert a Fixed Point Number to a Floating
+//; sub unFix {
+//;   my $signal_name = shift @_;
+//;   my $radix = shift @_;
+//;   return " 1.0 * $signal_name / ( 128\'d1 << $radix ) "
+//; }
+
+	 
+module `mname()` (
+   input signed [`$sig_fig`-1:0]   poly_R10S[`$verts`-1:0][`$axis`-1:0] ,   // 4 Sets X,Y Fixed Point Values
+   input 		       isQuad_R10H ,           // Is Poly Quad?
+   input 		       validPoly_R10H,         // Valid Data for Operation
+   input signed [`$sig_fig`-1:0]   screen_RnnnnS[1:0],       // Screen Dimensions
+   input [3:0] 		       subSample_RnnnnU ,        // SubSample_Interval
+   input 		       clk ,                     // Clock 
+   input 		       rst ,                     // Reset
+   input 		       halt_RnnnnL              //Halt Signal  
+		      );
+	    
+  
+   
+   
+/* In general only interesting things happen here when
+   not halted, otherwise we can just print halted */
+
+/* Setup Phase */
+   initial begin
+      integer file;
+      file = $fopen("`$filename`","w");
+      $fwrite( file , " ++++++++++++++++++++++++++++++++++++++++ \n" );
+      $fwrite( file , " Simulation Start \n" );
+      $fwrite( file , " ++++++++++++++++++++++++++++++++++++++++ \n" );
+      $fwrite( file , "\n" );
+      
+      @(negedge rst) ;
+      
+      while(1) begin
+	 
+	 @(posedge clk);
+	 
+	 
+	 if( halt_RnnnnL ) 
+	   begin
+	      if( validPoly_R10H ) begin
+		 $fwrite( file , "@%0t:" , $time );
+
+		 $fwrite( file , "\n\t\t" );		 
+		 $fwrite( file , "uP.v_0.x: %f\t" , `unFix('poly_R10S[0][0]', $radix)`  );
+		 $fwrite( file , "uP.v_0.y: %f\t" , `unFix('poly_R10S[0][1]', $radix)`  );
+		 $fwrite( file , "uP.v_1.x: %f\t" , `unFix('poly_R10S[1][0]', $radix)`  );
+		 $fwrite( file , "uP.v_1.y: %f\t" , `unFix('poly_R10S[1][1]', $radix)`  );
+
+		 $fwrite( file , "\n\t\t" );		 
+		 $fwrite( file , "uP.v_2.x: %f\t" , `unFix('poly_R10S[2][0]', $radix)`  );
+		 $fwrite( file , "uP.v_2.y: %f\t" , `unFix('poly_R10S[2][1]', $radix)`  );
+	
+	//; if(	 $verts >= 4 ) {	 
+		 if( isQuad_R10H ) begin
+		    $fwrite( file , "uP.v_3.x: %f\t" , `unFix('poly_R10S[3][0]', $radix)`  );
+		    $fwrite( file , "uP.v_3.y: %f\t" , `unFix('poly_R10S[3][1]', $radix)`  );
+		 end
+	//; }
+
+		 $fwrite( file , "\n" );
+		 
+	      end else begin // if ( validPoly_R10H )
+		 $fwrite( file , "@%0t: Invalid Data \n" , $time );
+	      end    
+	   end else begin
+	      $fwrite( file , "@%0t: Halted \n" , $time );
+	   end
+      end // while (1)
+   end
+endmodule 

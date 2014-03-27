@@ -1,0 +1,132 @@
+/******************************************************************************
+ * File: top_rast.vp
+ * Author: Jing Pu
+ * 
+ * Description:
+ * top for rast
+ * 
+ *
+ * Change bar:
+ * -----------
+ * Date          Author   Description
+ * Sep 18, 1812  jingpu   init version
+ * 
+ * ****************************************************************************/
+ 
+ module `mname`();
+
+   //; # first generate the DUT obj and get params from it
+   //; my $dut_obj = generate_base('rast', 'rast');
+   //; my $sig_fig = $dut_obj->get_param('SigFig');
+   //; my $radix = $dut_obj->get_param('Radix');
+   //; my $verts = $dut_obj->get_param('Vertices');
+   //; my $axis = $dut_obj->get_param('Axis');
+   //; my $colors = $dut_obj->get_param('Colors');
+   //; my $pipes_box = $dut_obj->get_param('PipesBox');
+   //; my $pipes_iter = $dut_obj->get_param('PipesIter');
+   //; my $pipes_hash = $dut_obj->get_param('PipesHash');
+   //; my $pipes_samp = $dut_obj->get_param('PipesSamp');
+
+
+   /*****************************************
+    * wires to connect design and environment
+    *****************************************/
+
+   //DUT INPUTS
+   logic signed   [`$sig_fig`-1:0] poly_R10S[`$verts`-1:0][`$axis`-1:0] ;   // 4 Sets X,Y Fixed Point Values
+   logic unsigned [`$sig_fig`-1:0] color_R10U[`$colors`-1:0] ;   // 4 Sets X,Y Fixed Point Values
+   logic 		        isQuad_R10H ;           // Is Poly Quad?
+   logic 		        validPoly_R10H ;        // Valid Data for Operation
+   //DUT INPUTS
+   
+   //DUT CONFIG
+   logic signed   [`$sig_fig`-1:0] screen_RnnnnS[1:0];       // Screen Dimensions
+   logic          [3:0]         subSample_RnnnnU ;        // SubSample_Interval
+   //DUT CONFIG
+   
+   //DUT GLOBAL
+   logic 		        clk ;                     // Clock 
+   logic 		        rst ;                     // Reset
+   //DUT GLOBAL
+   
+   //DUT OUTPUTS
+   logic 		        halt_RnnnnL;
+   logic signed   [`$sig_fig`-1:0] hit_R18S[`$axis`-1:0]; //Sample hit Location
+   logic signed   [`$sig_fig`-1:0] hit_R18S_top[`$axis`-1:0]; //Sample_top hit Location
+   logic unsigned [`$sig_fig`-1:0] color_R18U[`$colors`-1:0]; //Sample hit Location
+   logic unsigned [`$sig_fig`-1:0] color_R18U_top[`$colors`-1:0]; //Sample hit Location
+   logic 		        hit_valid_R18H ;  //Did Sample Hit?
+   logic 		        hit_valid_R18H_top ;  //Did Sample_top Hit?
+   //DUT OUTPUTS
+   
+
+
+   // instantiate the DUT
+   `$dut_obj -> instantiate()`
+     (
+      .poly_R10S(poly_R10S) ,            // Input: 4 Sets X,Y Fixed Point Values
+	     .color_R10U(color_R10U) ,            // Input: 4 Sets X,Y Fixed Point Values
+	     .isQuad_R10H (isQuad_R10H) ,       // Input: Is Poly Quad?
+	     .validPoly_R10H(validPoly_R10H) ,  // Input: Valid Data for Operation
+	     
+	     .screen_RnnnnS(screen_RnnnnS) ,        // Input: Screen Dimensions
+	     .subSample_RnnnnU (subSample_RnnnnU),  // Input: SubSample_Interval
+	     
+	     .clk(clk),                             // Input: Clock 
+	     .rst(rst),                             // Input: Reset
+	     
+	     .halt_RnnnnL(halt_RnnnnL), 
+	     
+	     .hit_R18S(hit_R18S),             // Output: Sample Location Tested
+	     .hit_R18S_top(hit_R18S_top),             // Output: Sample Location Tested
+	     .color_R18U(color_R18U) ,            // Input: 4 Sets X,Y Fixed Point Values
+	     .color_R18U_top(color_R18U_top) ,            // Input: 4 Sets X,Y Fixed Point Values
+	     .hit_valid_R18H(hit_valid_R18H),  // Output: Does Sample lie in uPoly     
+	     .hit_valid_R18H_top(hit_valid_R18H_top)  // Output: Does Sample lie in uPoly     
+	 );
+
+
+	// generate clocker
+   //; my $clk_obj = generate('clocker', 'clocker', Period=>1000);
+   `$clk_obj -> instantiate()`  ( .clk(clk) );
+   
+   
+   // generate testbench
+    //; my $bench_obj = generate( 'testbench', "testbench", 
+	//;                        SigFig=>$sig_fig,
+	//;                        Radix=>$radix,
+	//;                        Vertices=>$verts,
+	//;                        Axis=>$axis,
+	//;                        Colors=>$colors,
+	//;                        PipesBox=>$pipes_box,
+	//;                        PipesIter=>$pipes_iter,
+	//;                        PipesHash=>$pipes_hash,
+	//;                        PipesSamp=>$pipes_samp,
+	//;                        DUT_obj=>$dut_obj);
+   `$bench_obj -> instantiate()`
+     (
+	      // Output Signals (to DUT inputs)
+      .poly_R10S(poly_R10S) ,            
+	     .color_R10U(color_R10U) ,           
+	     .isQuad_R10H (isQuad_R10H) ,     
+	     .validPoly_R10H(validPoly_R10H) ,  
+	          // Output Control Signals (to DUT inputs)
+	     .screen_RnnnnS(screen_RnnnnS) ,        
+	     .subSample_RnnnnU (subSample_RnnnnU), 
+	          // Global Signals 
+	     .clk(clk),                            
+	     .rst(rst),                            
+	          // Input Control Signals (from DUT outputs)
+	     .halt_RnnnnL(halt_RnnnnL), 
+	          // Input Signals (from DUT outputs)
+	     .hit_R18S(hit_R18S),             
+	     .hit_R18S_top(hit_R18S_top),             
+	     .color_R18U(color_R18U) ,                
+	     .color_R18U_top(color_R18U_top) ,          
+	     .hit_valid_R18H(hit_valid_R18H),  
+	     .hit_valid_R18H_top(hit_valid_R18H_top)  
+	 );
+   
+
+
+endmodule //

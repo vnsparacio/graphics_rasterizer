@@ -1,0 +1,264 @@
+/*
+ *  Performs Sample Test on Micropolygon
+ * 
+ *  Inputs:
+ *    Sample and MicroPolygon Information
+ * 
+ *  Outputs:
+ *    Subsample Hit Flag, Subsample location, and Micropolygon Information
+ * 
+ *  Function:
+ *    Utilizing Edge Equations determine whether the 
+ *    sample location lies inside the micropolygon.
+ *    In the simple case of the triangle, this will
+ *    occur when the sample lies to one side of all
+ *    three lines (either all left or all right).
+ *    This corresponds to the minterm 000 and 111.
+ *    Additionally, if backface culling is performed,
+ *    then only keep the case of all right.
+ * 
+ *  Edge Equation:
+ *    For an edge defined as travelling from the 
+ *    vertice (x_1,y_1) to (x_2,y_2), the sample
+ *    (x_s,y_s) lies to the right of the line
+ *    if the following expression is true:
+ * 
+ *    0 >  ( x_1 - x_s ) * ( y_2 - y_s ) - ( x_2 - x_s ) * ( y_1 - y_s )
+ *  
+ *    otherwise it lies on the line (exactly 0) or 
+ *    to the left of the line.
+ *
+ *    This block evaluates the six edges described by the
+ *    micropolygons vertices,  to determine which
+ *    side of the lines the sample point lies.  Then it
+ *    determines if the sample point lies in the micropolygon
+ *    by or'ing the appropriate minterms.  In the case of 
+ *    the triangle only three edges are relevant.  In the
+ *    case of the quadrilateral five edges are relevant.
+ *  
+ * 
+ *   Author: John Brunhaver
+ *   Created:      Thu 07/23/09
+ *   Last Updated: Tue 10/06/10
+ *
+ *   Copyright 2009 <jbrunhaver@gmail.com>   
+ *
+ * 
+ *  NOTE: This file contains solutions to assignment 2
+ *  BUG!!!!
+ *
+ */
+
+/******************************************************************************
+ * PARAMETERIZATION
+ * ***************************************************************************/
+//; # module parameters
+//; my $sig_fig    = parameter(Name=>'SigFig',
+//;                            Val=>24, Min=>1, Step=>1, 
+//;                            Doc=>"Bits in color and position.");
+//; my $radix      = parameter(Name=>'Radix',
+//;                            Val=>10, Min=>1, Step=>1, 
+//;                            Doc=>"Fraction bits in color and position");
+//; my $verts      = parameter(Name=>'Vertices',
+//;                            Val=>3, Min=>3, Step=>1, 
+//;                            Doc=>"Maximum Vertices in micropolygon");
+//; my $axis       = parameter(Name=>'Axis',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of axis foreach vertex 3 is (x,y,z).");
+//; my $colors     = parameter(Name=>'Colors',
+//;                            Val=>3, Min=>1, Step=>1, 
+//;                            Doc=>"Number of color channels");
+//; my $pipe_depth = parameter(Name=>'PipelineDepth',
+//;                            Val=>2, Min=>1, Step=>1, 
+//;                            Doc=>"How many pipe stages are in this block");
+//; 
+//; # local variables
+//; my $edges = ($verts == 3) ? 3 : 5 ;
+//; my $shortSF = $sig_fig;
+//; my $MRound = 2 * $shortSF - $radix;
+
+
+/* A Note on Signal Names:
+ *
+ * Most signals have a suffix of the form _RxxxxN 
+ * where R indicates that it is a Raster Block signal
+ * xxxx indicates the clock slice that it belongs to
+ * and N indicates the type of signal that it is.
+ * H indicates logic high, L indicates logic low,
+ * U indicates unsigned fixed point, and S indicates
+ * signed fixed point.
+ * 
+ */
+
+
+
+module  `mname()`
+  ( 
+    input logic signed [`$sig_fig`-1:0]  poly_R16S[`$verts`-1:0][`$axis`-1:0], // Micropolygon to Iterate Over
+    input logic 			 unsigned [`$sig_fig`-1:0] color_R16U[`$colors`-1:0] , // Color of Poly
+    input logic signed [`$sig_fig`-1:0]  sample_R16S[1:0], // Sample Location    
+    input logic 			 validSamp_R16H, // A valid sample location
+    input logic 			 isQuad_R16H, //Micropolygon is quad
+
+    input logic 			 clk, // Clock
+    input logic 			 rst, // Reset
+  
+    output logic signed [`$sig_fig`-1:0] hit_R18S[`$axis`-1:0], // Hit Location
+    output logic 			 unsigned [`$sig_fig`-1:0] color_R18U[`$colors`-1:0] , // Color of Poly
+    output logic 			 hit_valid_R18H                   // Is hit good
+    );
+   
+   // output for retiming registers	
+   logic signed [`$sig_fig`-1:0] 	 hit_R18S_retime[`$axis`-1:0];   // Hit Location
+   logic 				 unsigned [`$sig_fig`-1:0]  color_R18U_retime[`$colors`-1:0];   // Color of Poly
+   logic 				 hit_valid_R18H_retime;   // Is hit good
+   // output for retiming registers	
+   
+   // Signals in Access Order  
+   logic signed [`$sig_fig`-1:0] 	 poly_shift_R16S[`$verts`-1:0][1:0]; // Micropolygon to Iterate Over    
+   logic signed [`$sig_fig`-1:0] 	 edge_R16S[`$edges`-1:0][1:0][1:0]; //Edges 
+   logic signed [2*`$shortSF`-1:0] 	 dist_lg_R16S[`$edges`-1:0];
+   logic signed [`$MRound`-1:0] 	 dist_R16S[`$edges`-1:0];  
+   logic [`$edges`-1:0] 		 edge_chk1_R16;
+   logic 				 sample_hit_R16H ;
+   logic 				 hit_valid_R16H ;
+   logic 				 norm_factor_R16S ;
+   logic signed [`$sig_fig`-1:0] 	 hit_R16S[`$axis`-1:0];  
+   // Signals in Access Order 
+
+   
+
+   /* Organize Edge Data*/
+   //; for( my $i = 0 ; $i < $verts ; $i++ ) {
+   //; 	for( my $j = 0 ; $j < 2 ; $j++ ) {
+   always_comb begin
+      poly_shift_R16S[`$i`][`$j`] = poly_R16S[`$i`][`$j`] - sample_R16S[`$j`];
+   end //always_comb
+   //; 	}
+   //; }
+   /* Organize Edge Data */
+
+   
+   /*Calculate Distance*/
+   //; if( $verts == 3 ) {
+   always_comb begin
+      edge_R16S[0][1] = poly_shift_R16S[1];
+      edge_R16S[0][0] = poly_shift_R16S[0];
+
+      edge_R16S[1][1] = poly_shift_R16S[2];
+      edge_R16S[1][0] = poly_shift_R16S[1];
+
+      edge_R16S[2][1] = poly_shift_R16S[0];
+      edge_R16S[2][0] = poly_shift_R16S[2];
+   end //always_comb
+   //; }
+   
+   //; for( my $i = 0 ; $i < $edges ; $i++) {
+   always_comb begin
+      dist_lg_R16S[`$i`] =     edge_R16S[`$i`][0][0] * edge_R16S[`$i`][1][1]
+     -  edge_R16S[`$i`][0][1] * edge_R16S[`$i`][1][0];
+   end	    
+   //; }
+
+   
+   //; if( $edges == 3 ) {
+   always_comb begin
+      edge_chk1_R16[0] =  dist_lg_R16S[0]  <=  0 ;
+      edge_chk1_R16[1] =  dist_lg_R16S[1]  <   0 ;
+      edge_chk1_R16[2] =  dist_lg_R16S[2]  <=  0 ;
+   end  
+   //; } elsif( $edges == 5 ) {
+   always_comb begin
+      assert( 0 ) else $fatal( "Sample test unit not configured for 4 Vertices\n");
+   end  
+   //; }
+
+   assign hit_valid_R16H = & {edge_chk1_R16[2:0], validSamp_R16H}; //Back Face Cull Case
+
+
+   
+   /*Calculate Distance*/
+   
+   //Calculate Depth as depth of first vertex
+   // Note that a barrycentric interpolation would
+   // be more accurate
+   //; if( $verts == 3) {
+   always_comb begin
+      hit_R16S[1:0] = sample_R16S[1:0]; //Make sure you use unjittered sample
+      hit_R16S[2] = poly_R16S[0][2]; // z value equals the z value of the first vertex
+   end
+   //; }
+   //TODO: Calculate Depth by berrycentric intropolation
+
+
+   /* Flop R16 to R18_retime with retiming registers*/
+   
+   //; my $d_samp_r1 = generate( 'dff2', "d_samp_r1", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>$axis,
+   //;                        PipelineDepth=>$pipe_depth-1,
+   //;                        Retime=>'YES' );
+   `$d_samp_r1->instantiate()` (
+				.in(hit_R16S) , 
+				.clk(clk) , .reset(rst), .en(1'b1),
+				.out(hit_R18S_retime));
+   
+   //; my $d_samp_r2 = generate( 'dff2', "d_samp_r2", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>$colors,
+   //;                        PipelineDepth=>$pipe_depth-1,
+   //;                        Retime=>'YES' );
+   `$d_samp_r2->instantiate()`(
+			       .in(color_R16U) , 
+			       .clk(clk) , .reset(rst), .en(1'b1),
+			       .out(color_R18U_retime));
+   
+   //; my $d_samp_r3 = generate( 'dff', "d_samp_r3", 
+   //;                        BitWidth=>1,
+   //;                        PipelineDepth=>$pipe_depth-1,
+   //;                        Retime=>'YES' );
+   `$d_samp_r3->instantiate()` (
+				.in(hit_valid_R16H) , 
+				.clk(clk) , .reset(rst), .en(1'b1),
+				.out(hit_valid_R18H_retime));
+   
+   /* Flop R16 to R18_retime with retiming registers*/
+   
+   
+   /* Flop R18_retime to R18 with fixed registers */
+   
+   //; my $d_samp_f1 = generate( 'dff2', "d_samp_f1", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>$axis,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d_samp_f1->instantiate()` (
+				.in(hit_R18S_retime) , 
+				.clk(clk) , .reset(rst), .en(1'b1),
+				.out(hit_R18S));
+   
+   //; my $d_samp_f2 = generate( 'dff2', "d_samp_f2", 
+   //;                        BitWidth=>$sig_fig,
+   //;                        ArraySize1=>$colors,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d_samp_f2->instantiate()`(
+			       .in(color_R18U_retime) , 
+			       .clk(clk) , .reset(rst), .en(1'b1),
+			       .out(color_R18U));
+   
+   //; my $d_samp_f3 = generate( 'dff', "d_samp_f3", 
+   //;                        BitWidth=>1,
+   //;                        PipelineDepth=>1,
+   //;                        Retime=>'NO' );
+   `$d_samp_f3->instantiate()` (
+				.in(hit_valid_R18H_retime) , 
+				.clk(clk) , .reset(rst), .en(1'b1),
+				.out(hit_valid_R18H));
+   
+   /* Flop R18_retime to R18 with fixed registers */ 
+
+endmodule
+
+
+

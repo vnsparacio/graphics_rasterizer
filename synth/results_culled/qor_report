@@ -1,0 +1,68 @@
+ 
+****************************************
+Report : qor
+Design : rast
+Version: F-2011.09-SP4
+Date   : Mon Dec  2 01:28:17 2013
+****************************************
+
+
+  Timing Path Group 'clk'
+  -----------------------------------
+  Levels of Logic:               9.00
+  Critical Path Length:          0.29
+  Critical Path Slack:           0.00
+  Critical Path Clk Period:      0.30
+  Total Negative Slack:          0.00
+  No. of Violating Paths:        0.00
+  Worst Hold Violation:          0.00
+  Total Hold Violation:          0.00
+  No. of Hold Violations:        0.00
+  -----------------------------------
+
+
+  Cell Count
+  -----------------------------------
+  Hierarchical Cell Count:          0
+  Hierarchical Port Count:          0
+  Leaf Cell Count:              17565
+  Buf/Inv Cell Count:            4951
+  CT Buf/Inv Cell Count:            0
+  Combinational Cell Count:     14206
+  Sequential Cell Count:         3359
+  Macro Count:                      0
+  -----------------------------------
+
+
+  Area
+  -----------------------------------
+  Combinational Area:    23378.645037
+  Noncombinational Area: 15867.885748
+  Net Area:                  0.000000
+  -----------------------------------
+  Cell Area:             39246.530785
+  Design Area:           39246.530785
+
+
+  Design Rules
+  -----------------------------------
+  Total Number of Nets:         19400
+  Nets With Violations:             1
+  Max Trans Violations:             0
+  Max Cap Violations:               0
+  Max Fanout Violations:            1
+  -----------------------------------
+
+
+  Hostname: myth23
+
+  Compile CPU Statistics
+  -----------------------------------------
+  Resource Sharing:                   86.12
+  Logic Optimization:                 65.47
+  Mapping Optimization:              123.08
+  -----------------------------------------
+  Overall Compile Time:              284.31
+  Overall Compile Wall Clock Time:   746.75
+
+1
